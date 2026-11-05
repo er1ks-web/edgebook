@@ -14,6 +14,8 @@ export async function GET() {
     quota,
     aiKey: Boolean(process.env.ANTHROPIC_API_KEY?.trim()),
     loginRequired: authMode(process.env).kind === "required",
+    // Without a persistent folder, a host can erase saved data on each deployment.
+    storageAtRisk: process.env.NODE_ENV === "production" && !process.env.DATA_DIR?.trim(),
   };
   if (mode === "demo") {
     return NextResponse.json({ ...base, sports: DEMO_SPORTS.map(({ key, title, group }) => ({ key, title, group })) });

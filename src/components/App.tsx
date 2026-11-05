@@ -29,6 +29,7 @@ interface Status {
   mode: "demo" | "live";
   aiKey: boolean;
   loginRequired: boolean;
+  storageAtRisk?: boolean;
   sports: SportInfo[];
   error?: string;
 }
@@ -201,6 +202,11 @@ export function App() {
       {isDemo && (
         <div className="banner demo">
           <strong>Demo data.</strong> These teams and prices are made up. Add <code>ODDS_API_KEY</code> to <code>.env.local</code> for real odds.
+        </div>
+      )}
+      {status?.storageAtRisk && (
+        <div className="banner danger" role="alert">
+          <strong>Your data isn&apos;t safe yet.</strong> Saved bets can be erased on the next deployment. Attach a volume on your host and set <code>DATA_DIR</code> to its path.
         </div>
       )}
       {busy === "ai" && (

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { closingValue, ledgerStats, profit } from "@/lib/engine/settle";
 import type { Bet, LegResult } from "@/lib/types";
 import { AddPastBet } from "./AddPastBet";
+import { BackupPanel } from "./BackupPanel";
 import { api, kickoff, money, pct, signedMoney, signedPct, Stat } from "./common";
 
 const RESULTS: { value: LegResult; label: string }[] = [
@@ -197,6 +198,8 @@ export function LedgerView({ mode, strategyId, onError }: { mode: "demo" | "live
         <summary>Add a bet you already placed</summary>
         <AddPastBet strategyId={strategyId} onAdded={load} onError={onError} />
       </details>
+
+      <BackupPanel onRestored={load} />
 
       <div className="ledger-actions">
         <h2>Bets</h2>
