@@ -1,6 +1,6 @@
 # Edgebook
 
-A private tool for finding sports picks and parlays. It runs on your own computer and only listens on `127.0.0.1`. There is no login, so add authentication before hosting it anywhere public.
+A private tool for finding sports picks and parlays. It's built for one person: there is one login and no signup.
 
 ## Run it
 
@@ -17,6 +17,16 @@ Copy `.env.example` to `.env.local`, fill in the keys, and restart:
 
 - `ODDS_API_KEY`, from [The Odds API](https://the-odds-api.com). A refresh costs sports × markets × regions credits. Odds refresh only when you press the button.
 - `ANTHROPIC_API_KEY`, from the [Anthropic Console](https://console.anthropic.com). Used only when you press AI research. Each run shows its approximate cost.
+
+## Log in and host it
+
+Set `APP_USERNAME` and `APP_PASSWORD` (at least 10 characters) to require a login. If they aren't set, local development stays open and a production build stays locked.
+
+To host it, use a server that keeps files between deployments:
+
+1. Build with `npm run build` and start with `npm run start:hosted`.
+2. Set `ODDS_API_KEY`, `ANTHROPIC_API_KEY`, `APP_USERNAME` and `APP_PASSWORD` in the host's settings. Never commit them.
+3. Attach a persistent disk and set `DATA_DIR` to its path, or the ledger is lost on each deployment.
 
 ## How a pick is made
 
