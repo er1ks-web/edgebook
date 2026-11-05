@@ -8,6 +8,7 @@ import { AiPicksView } from "./AiPicksView";
 import { ago, api, type SlipControls } from "./common";
 import { ParlayBuilderView, type OfferedPick } from "./ParlayBuilderView";
 import { LedgerView } from "./LedgerView";
+import { Logo } from "./Logo";
 import { ParlaysView, PicksView } from "./PicksView";
 import { PlaybookView } from "./PlaybookView";
 import { StrategyView, type SportInfo } from "./StrategyView";
@@ -27,6 +28,7 @@ const STRATEGY_KEY = "edgebook.strategy";
 interface Status {
   mode: "demo" | "live";
   aiKey: boolean;
+  loginRequired: boolean;
   sports: SportInfo[];
   error?: string;
 }
@@ -164,7 +166,8 @@ export function App() {
   return (
     <div className="shell">
       <header className="topbar">
-        <div className="brand">Edgebook</div>
+        <Logo />
+
         <label className="strategy-select">
           <span className="sr-only">Active strategy</span>
           <select value={activeId ?? ""} onChange={(e) => setActiveId(e.target.value)}>
@@ -264,6 +267,18 @@ export function App() {
         {scan?.fetchedAt && !isDemo && <span>Odds from {ago(scan.fetchedAt)}</span>}
         {scan?.quota.remaining != null && <span>{scan.quota.remaining} odds credits left</span>}
         <span>Estimates, not guarantees. Edgebook never places bets.</span>
+        {status?.loginRequired && (
+          <button
+            type="button"
+            className="link-btn"
+            onClick={async () => {
+              await fetch("/api/logout", { method: "POST" });
+              window.location.href = "/login";
+            }}
+          >
+            Log out
+          </button>
+        )}
       </footer>
     </div>
   );

@@ -3,7 +3,8 @@ import path from "node:path";
 import { PRESETS, StrategySchema, type Strategy } from "./strategy";
 import type { AiPicksRun, AiReview, Bet, RawEvent } from "./types";
 
-const DATA_DIR = path.join(process.cwd(), "data");
+// A host can point this at a persistent disk, so data survives each new deployment.
+const DATA_DIR = process.env.DATA_DIR?.trim() || path.join(process.cwd(), "data");
 
 export interface AppState {
   strategies: Strategy[];

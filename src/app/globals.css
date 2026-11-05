@@ -50,8 +50,44 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 .shell { max-width: 1040px; margin: 0 auto; padding: 16px 16px 40px; }
 .topbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.brand { font-weight: 600; font-size: 18px; letter-spacing: -0.01em; }
-.brand::after { content: ""; display: inline-block; width: 7px; height: 7px; margin-left: 5px; background: var(--accent); border-radius: 50%; }
+.logo { display: inline-flex; align-items: center; gap: 0.32em; font-size: 21px; line-height: 1; white-space: nowrap; flex: none; }
+.logo-mark { height: 1.02em; width: auto; flex: none; overflow: visible; }
+.logo-bar { fill: var(--accent); }
+.logo-word { font-family: var(--font-logo), var(--font-sans), sans-serif; font-style: italic; font-weight: 800; letter-spacing: -0.035em; color: var(--ink); padding-right: 0.06em; }
+
+/* Startup intro: plays once per tab. The app rises in as the logo clears. */
+.splash { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: 16px; background: var(--bg); pointer-events: none; animation: splash-out 0.42s cubic-bezier(0.4, 0, 0.2, 1) 1.28s both; }
+.splash-logo { font-size: clamp(32px, 9vw, 64px); }
+.splash .logo-bar { transform-box: fill-box; animation: bar-in 0.56s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.splash .logo-bar-1 { animation-delay: 0.08s; }
+.splash .logo-bar-2 { animation-delay: 0.18s; }
+.splash .logo-bar-3 { animation-delay: 0.28s; }
+.splash .logo-word { animation: word-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.42s both; }
+.shell, .login-card { animation: rise-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) 1.32s both; }
+
+@keyframes bar-in {
+  from { opacity: 0; transform: translateX(-70%); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes word-in {
+  from { opacity: 0; transform: translateX(-0.3em); clip-path: inset(-30% 100% -40% -10%); }
+  to { opacity: 1; transform: none; clip-path: inset(-30% -10% -40% -10%); }
+}
+@keyframes splash-out {
+  from { opacity: 1; visibility: visible; }
+  to { opacity: 0; visibility: hidden; }
+}
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+.intro-seen .splash { display: none; }
+.intro-seen .shell, .intro-seen .login-card { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  .splash { display: none; }
+  .shell, .login-card { animation: none; }
+}
 .strategy-select select { min-width: 190px; }
 .top-actions { display: flex; gap: 8px; margin-left: auto; }
 
@@ -131,6 +167,13 @@ main { margin-top: 12px; }
 .log-bet input { width: 100px; color: var(--ink); font-size: 14px; }
 .logged { color: var(--up); }
 
+.login { min-height: 100vh; min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 16px; margin: 0; }
+.login-card { width: 100%; max-width: 360px; background: var(--surface); border-radius: var(--radius); padding: 24px 20px; display: flex; flex-direction: column; gap: 14px; }
+.login-logo { margin: 0 0 6px; font-size: inherit; font-weight: inherit; }
+.login-logo .logo { font-size: 28px; }
+.login-card input { font-size: 16px; }
+.login-error { color: var(--down); margin: 0; }
+.footer .link-btn { margin-left: auto; }
 .add-past > summary { cursor: pointer; font-weight: 600; min-height: 28px; }
 .past-bet { display: flex; flex-direction: column; gap: 14px; margin-top: 10px; }
 .past-bet > p { margin: 0; }
