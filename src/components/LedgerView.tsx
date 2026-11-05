@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { closingValue, ledgerStats, profit } from "@/lib/engine/settle";
+import { bettingRecords, closingValue, type DayResult, ledgerStats, localDay, profit } from "@/lib/engine/settle";
 import type { Bet, BetCheck, LegResult } from "@/lib/types";
 import { AddPastBet } from "./AddPastBet";
 import { BackupPanel } from "./BackupPanel";
@@ -73,15 +73,18 @@ function EquityChart({ bets }: { bets: Bet[] }) {
   );
 }
 
-function CheckResult({ check }: { check: BetCheck }) {
+function CheckResult({ check, open, onToggle }: { check: BetCheck; open: boolean; onToggle: (open: boolean) => void }) {
   return (
-    <section className="bet-check" aria-label="AI check">
-      <div className="check-head">
+    <details className="bet-check" open={open} onToggle={(e) => onToggle(e.currentTarget.open)}>
+      <summary className="check-head">
         <span className={`check-score check-${check.label.toLowerCase()}`}>
           <span className="num">{check.rating}/10</span> {check.label}
         </span>
-        <span className="small muted">Rates the price and news, not the chance of winning</span>
-      </div>
+        <span className="small strong">AI check</span>
+        <span className="small muted">{open ? "Hide" : "Show"}</span>
+        <span className="check-caret" aria-hidden="true">▾</span>
+      </summary>
+      <p className="small muted">Rates the price and news, not the chance of winning.</p>
       <p>{check.summary}</p>
       {check.note && <p className="small warn-text">{check.note}</p>}
       {(check.hitProb !== null || check.ev !== null) && (
@@ -117,13 +120,14 @@ function CheckResult({ check }: { check: BetCheck }) {
         {check.oddsAgeMin !== null ? `, using odds about ${check.oddsAgeMin} min old` : ", with no saved odds for this bet"}
         {` · about $${check.costUsd.toFixed(2)} of Claude usage`}
       </p>
-    </section>
+    </details>
   );
 }
 
 function BetCard({ bet, onChange, onError }: { bet: Bet; onChange: (b: Bet | null) => void; onError: (m: string) => void }) {
   const clv = closingValue(bet);
   const [checking, setChecking] = useState(false);
+  const [checkOpen, setCheckOpen] = useState(false);
   const canCheck = bet.status === "pending" && !bet.demo && bet.legs.some((l) => l.result === "pending" && Date.parse(l.commence) > Date.now());
 
   async function runCheck() {
@@ -131,6 +135,7 @@ function BetCard({ bet, onChange, onError }: { bet: Bet; onChange: (b: Bet | nul
     try {
       const { bet: next } = await api<{ bet: Bet }>(`/api/bets/${bet.id}/check`, { method: "POST" });
       onChange(next);
+      setCheckOpen(true); // Show a result the moment it arrives.
     } catch (err) {
       onError((err as Error).message);
     } finally {
@@ -196,13 +201,114 @@ function BetCard({ bet, onChange, onError }: { bet: Bet; onChange: (b: Bet | nul
         {clv !== null && <span>Beat close by <span className="num">{signedPct(clv)}</span></span>}
         {bet.status !== "pending" && <span className="strong">Result <span className={`num ${profit(bet) >= 0 ? "up" : "down"}`}>{signedMoney(profit(bet))}</span></span>}
       </div>
-      {bet.aiCheck && <CheckResult check={bet.aiCheck} />}
+      {bet.aiCheck && <CheckResult check={bet.aiCheck} open={checkOpen} onToggle={setCheckOpen} />}
     </li>
   );
 }
 
+const dayLabel = (day: string) =>
+  new Date(`${day}T12:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+const STRIP_DAYS = 28;
+
+/** The last four weeks, one cell per day. A sign in each cell keeps it readable without colour. */
+function DayStrip({ results }: { results: DayResult[] }) {
+  const [active, setActive] = useState<string | null>(null);
+  const byDay = new Map(results.map((d) => [d.day, d]));
+  const today = new Date();
+  const days = Array.from({ length: STRIP_DAYS }, (_, i) =>
+    localDay(new Date(today.getFullYear(), today.getMonth(), today.getDate() - (STRIP_DAYS - 1 - i), 12).getTime()),
+  );
+  const describe = (day: string) => {
+    const d = byDay.get(day);
+    return d ? `${dayLabel(day)}: ${signedMoney(d.net)} from ${plural(d.bets, "bet")}` : `${dayLabel(day)}: no settled bets`;
+  };
+
+  return (
+    <div className="record-days">
+      <div className="stat-label">Last 4 weeks</div>
+      <div className="day-strip" onMouseLeave={() => setActive(null)}>
+        {days.map((day) => {
+          const net = byDay.get(day)?.net;
+          const tone = net === undefined ? "" : net > 0 ? "day-green" : net < 0 ? "day-red" : "day-even";
+          return (
+            <button
+              key={day}
+              type="button"
+              className={`day-cell ${tone}`}
+              aria-label={describe(day)}
+              onMouseEnter={() => setActive(day)}
+              onFocus={() => setActive(day)}
+              onClick={() => setActive(day)}
+            >
+              {net === undefined ? "" : net > 0 ? "+" : net < 0 ? "−" : "="}
+            </button>
+          );
+        })}
+      </div>
+      <p className="small muted day-readout" aria-live="polite">
+        {active ? describe(active) : "Green made a profit, red made a loss. Hover or tap a day for its total."}
+      </p>
+    </div>
+  );
+}
+
+function Records({ bets }: { bets: Bet[] }) {
+  const r = bettingRecords(bets);
+  const streak = r.currentStreak;
+  const dayRun = r.hottestDays;
+  return (
+    <section className="panel">
+      <h2>Streaks and records</h2>
+      <p className="small muted records-note">
+        Bets count on the day they were decided. Days off and even days don&apos;t break a day streak. Streaks are mostly luck, so don&apos;t raise your stakes because of one.
+      </p>
+      <div className="stats paper-stats record-stats">
+        <Stat
+          label="Current bet streak"
+          value={streak ? plural(streak.length, streak.kind === "won" ? "win" : "loss", streak.kind === "won" ? "wins" : "losses") : "None yet"}
+          tone={streak ? (streak.kind === "won" ? "up" : "down") : undefined}
+          note={`${r.won} won, ${r.lost} lost${r.push ? `, ${r.push} push` : ""}`}
+        />
+        <Stat label="Hottest bet streak" value={plural(r.hottestStreak, "win")} tone={r.hottestStreak ? "up" : undefined} />
+        <Stat label="Coldest bet streak" value={plural(r.coldestStreak, "loss", "losses")} tone={r.coldestStreak ? "down" : undefined} />
+        <Stat
+          label="Current day streak"
+          value={r.currentRedDays ? `${plural(r.currentRedDays, "red day")}` : plural(r.currentGreenDays, "green day")}
+          tone={r.currentRedDays ? "down" : r.currentGreenDays ? "up" : undefined}
+        />
+        <Stat
+          label="Hottest day streak"
+          value={plural(dayRun?.length ?? 0, "green day")}
+          tone={dayRun ? "up" : undefined}
+          note={dayRun ? (dayRun.from === dayRun.to ? dayLabel(dayRun.from) : `${dayLabel(dayRun.from)} to ${dayLabel(dayRun.to)}`) : undefined}
+        />
+        <Stat label="Coldest day streak" value={plural(r.coldestDays, "red day")} tone={r.coldestDays ? "down" : undefined} />
+        <Stat label="Green and red days" value={`${r.greenDays} and ${r.redDays}`} note={`${plural(r.days.length, "day")} with results`} />
+        <Stat label="Best day" value={r.bestDay ? signedMoney(r.bestDay.net) : "None yet"} tone={r.bestDay ? "up" : undefined} note={r.bestDay ? dayLabel(r.bestDay.day) : undefined} />
+        <Stat label="Worst day" value={r.worstDay ? signedMoney(r.worstDay.net) : "None yet"} tone={r.worstDay ? "down" : undefined} note={r.worstDay ? dayLabel(r.worstDay.day) : undefined} />
+        <Stat label="Biggest win" value={r.biggestWin === null ? "None yet" : signedMoney(r.biggestWin)} tone={r.biggestWin === null ? undefined : "up"} />
+        <Stat label="Biggest loss" value={r.biggestLoss === null ? "None yet" : signedMoney(r.biggestLoss)} tone={r.biggestLoss === null ? undefined : "down"} />
+        <Stat label="Singles" value={signedMoney(r.singles.net)} tone={r.singles.net > 0 ? "up" : r.singles.net < 0 ? "down" : undefined} note={`${r.singles.won} won, ${r.singles.lost} lost`} />
+        <Stat label="Parlays" value={signedMoney(r.parlays.net)} tone={r.parlays.net > 0 ? "up" : r.parlays.net < 0 ? "down" : undefined} note={`${r.parlays.won} won, ${r.parlays.lost} lost`} />
+      </div>
+      <DayStrip results={r.days} />
+    </section>
+  );
+}
+
+type BetFilter = "all" | Bet["status"];
+const FILTERS: { value: BetFilter; label: string; empty: string }[] = [
+  { value: "all", label: "All", empty: "" },
+  { value: "pending", label: "Open", empty: "No open bets." },
+  { value: "won", label: "Won", empty: "No won bets yet." },
+  { value: "lost", label: "Lost", empty: "No lost bets." },
+  { value: "push", label: "Push", empty: "No pushed bets." },
+];
+
 export function LedgerView({ mode, strategyId, onError }: { mode: "demo" | "live"; strategyId: string | null; onError: (m: string) => void }) {
   const [bets, setBets] = useState<Bet[] | null>(null);
+  const [filter, setFilter] = useState<BetFilter>("all");
   const [message, setMessage] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
 
@@ -230,6 +336,11 @@ export function LedgerView({ mode, strategyId, onError }: { mode: "demo" | "live
   const paper = bets.filter((b) => b.paper && !b.demo);
   const paperStats = ledgerStats(paper);
   const settled = visible.filter((b) => b.status !== "pending");
+  const countOf = (f: BetFilter) => (f === "all" ? visible.length : visible.filter((b) => b.status === f).length);
+  // Push only appears once there is one, and the view falls back if the last one changes.
+  const filters = FILTERS.filter((f) => f.value !== "push" || countOf("push") > 0);
+  const active = filters.find((f) => f.value === filter) ?? filters[0];
+  const shown = active.value === "all" ? visible : visible.filter((b) => b.status === active.value);
 
   return (
     <>
@@ -252,6 +363,8 @@ export function LedgerView({ mode, strategyId, onError }: { mode: "demo" | "live
         </section>
       )}
 
+      {settled.length > 0 && <Records bets={visible} />}
+
       {paper.length > 0 && (
         <section className="panel">
           <h2>AI picks track record</h2>
@@ -266,7 +379,7 @@ export function LedgerView({ mode, strategyId, onError }: { mode: "demo" | "live
       )}
 
       <details className="panel add-past">
-        <summary>Add a bet you already placed</summary>
+        <summary>Add a bet you already placed, by hand or from a screenshot</summary>
         <AddPastBet strategyId={strategyId} onAdded={load} onError={onError} />
       </details>
 
@@ -281,16 +394,29 @@ export function LedgerView({ mode, strategyId, onError }: { mode: "demo" | "live
       {visible.length === 0 ? (
         <p className="empty">No bets logged yet. Open a pick and choose Log bet after you place it, or add one you&apos;ve already placed above.</p>
       ) : (
-        <ul className="bet-list">
-          {visible.map((b) => (
-            <BetCard
-              key={b.id}
-              bet={b}
-              onError={onError}
-              onChange={(next) => setBets((list) => (list ?? []).flatMap((x) => (x.id !== b.id ? [x] : next ? [next] : [])))}
-            />
-          ))}
-        </ul>
+        <>
+          <div className="segmented bet-filter" role="group" aria-label="Show bets">
+            {filters.map((f) => (
+              <button key={f.value} className={active.value === f.value ? "on" : ""} aria-pressed={active.value === f.value} onClick={() => setFilter(f.value)}>
+                {f.label} <span className="num">{countOf(f.value)}</span>
+              </button>
+            ))}
+          </div>
+          {shown.length === 0 ? (
+            <p className="empty">{active.empty}</p>
+          ) : (
+            <ul className="bet-list">
+              {shown.map((b) => (
+                <BetCard
+                  key={b.id}
+                  bet={b}
+                  onError={onError}
+                  onChange={(next) => setBets((list) => (list ?? []).flatMap((x) => (x.id !== b.id ? [x] : next ? [next] : [])))}
+                />
+              ))}
+            </ul>
+          )}
+        </>
       )}
     </>
   );

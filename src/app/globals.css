@@ -176,9 +176,29 @@ main { margin-top: 12px; }
 .footer .link-btn { margin-left: auto; }
 .bet-actions { display: flex; gap: 6px; flex: none; }
 .bet-head { flex-wrap: wrap; }
-.bet-check { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
+.bet-check { border-top: 1px solid var(--line); padding-top: 10px; }
+.bet-check[open] > * + * { margin-top: 8px; }
 .bet-check p { margin: 0; }
-.check-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.check-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-height: 32px; cursor: pointer; list-style: none; }
+.check-head::-webkit-details-marker { display: none; }
+.check-caret { margin-left: auto; color: var(--ink-2); transition: transform 0.15s; }
+.bet-check[open] .check-caret { transform: rotate(180deg); }
+.records-note { margin: 0 0 12px; }
+.record-stats { margin-bottom: 0; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); }
+.record-days { margin-top: 12px; }
+.day-strip { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 6px; }
+.day-cell { width: 24px; height: 24px; padding: 0; border: 0; border-radius: 4px; background: var(--surface-2); color: var(--ink-3); font-family: var(--font-mono), monospace; font-size: 13px; line-height: 1; cursor: default; }
+.day-cell:hover, .day-cell:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+.day-green { background: var(--up); color: var(--accent-ink); font-weight: 600; }
+.day-red { background: var(--down); color: var(--accent-ink); font-weight: 600; }
+.day-even { background: var(--line); color: var(--ink); }
+.day-readout { min-height: 20px; margin: 6px 0 0; }
+.bet-filter { margin-bottom: 8px; }
+.slip-read { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.slip-file { display: none; }
+.slip-note { margin-top: 8px; }
+.slip-note p { margin: 0; }
+.slip-note ul { margin: 6px 0 0; padding-left: 18px; }
 .check-score { font-weight: 600; padding: 3px 10px; border-radius: 999px; background: var(--surface-2); white-space: nowrap; }
 .check-strong { background: #173a28; color: var(--up); }
 .check-fair { background: var(--surface-2); color: var(--ink); }

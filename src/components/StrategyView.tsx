@@ -314,13 +314,13 @@ export function StrategyView({
           <span className="field-hint">Claude applies this while it researches your top selections, and needs evidence to change a probability.</span>
         </label>
         <div className="grid">
-          <NumberField label="Games to research" step="1" value={draft.ai.gamesToResearch} onChange={(n) => setAi("gamesToResearch", n)} hint="Soonest games first. Allow roughly $0.25 per game, plus at least 3 searches each." />
+          <NumberField label="Games to research" step="1" value={draft.ai.gamesToResearch} onChange={(n) => setAi("gamesToResearch", n)} hint="Soonest games first. Allow roughly $0.40 per game, with up to 6 searches each." />
           <NumberField label="Most bets per run" step="1" value={draft.ai.picksCount} onChange={(n) => setAi("picksCount", n)} />
           <NumberField label="Trust in Claude's estimate" suffix="%" value={draft.ai.aiWeightPct} onChange={(n) => setAi("aiWeightPct", n)} hint="How much of the gap between Claude and the market to accept. Raise it only if the Ledger's track record supports it." />
           <NumberField label="Minimum edge for AI picks" suffix="%" value={draft.ai.minEdgePct} onChange={(n) => setAi("minEdgePct", n)} />
           <NumberField label="Largest AI adjustment" suffix="pts" value={draft.ai.maxAdjustmentPts} onChange={(n) => setAi("maxAdjustmentPts", n)} hint="A hard cap on how far Claude can move a market probability." />
           <NumberField label="Value picks to check" step="1" value={draft.ai.reviewCount} onChange={(n) => setAi("reviewCount", n)} />
-          <NumberField label="Web searches per turn" step="1" value={draft.ai.maxSearches} onChange={(n) => setAi("maxSearches", n)} hint="More searches cost more. AI picks always allow at least 3 per game." />
+          <NumberField label="Web searches per turn" step="1" value={draft.ai.maxSearches} onChange={(n) => setAi("maxSearches", n)} hint="More searches cost more. AI picks always allow up to 6 per game." />
           <Choice
             label="Research depth"
             value={draft.ai.effort}

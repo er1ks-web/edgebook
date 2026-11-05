@@ -1,8 +1,24 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { localDay } from "@/lib/engine/settle";
+import type { SlipDraft } from "@/lib/slipImport";
 import type { MarketKey } from "@/lib/types";
 import { api, kickoff } from "./common";
+
+const MAX_IMAGE_SIDE = 2000;
+
+/** Shrinks a screenshot in the browser, so large phone images upload quickly and cost less to read. */
+async function imageToJpeg(file: Blob): Promise<string> {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, MAX_IMAGE_SIDE / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  return canvas.toDataURL("image/jpeg", 0.88).split(",")[1];
+}
 
 interface Game {
   id: string;
@@ -65,6 +81,11 @@ export function AddPastBet({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  const [reading, setReading] = useState(false);
+  const [slipNote, setSlipNote] = useState<{ text: string; warnings: string[] } | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  // A total read from a slip must survive the recalculation that follows new legs.
+  const slipTotal = useRef<string | null>(null);
 
   useEffect(() => {
     api<{ games: Game[] }>("/api/games")
@@ -88,7 +109,10 @@ export function AddPastBet({
   const productOdds = legs.reduce((a, l) => a * l.price, 1);
   const legsKey = legs.map((l) => l.price).join();
   useEffect(() => {
-    if (legs.length) setTotalOdds(productOdds.toFixed(2));
+    if (slipTotal.current) {
+      setTotalOdds(slipTotal.current);
+      slipTotal.current = null;
+    } else if (legs.length) setTotalOdds(productOdds.toFixed(2));
     else setTotalOdds("");
     // Recalculate only when the legs change, so a typed total isn't overwritten.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -132,9 +156,51 @@ export function AddPastBet({
     setAway("");
   }
 
+  async function readSlip(file: Blob) {
+    setProblem(null);
+    setSaved(null);
+    setSlipNote(null);
+    setReading(true);
+    try {
+      const image = await imageToJpeg(file).catch(() => {
+        throw new Error("That file couldn't be opened as an image. Try a PNG or JPEG screenshot.");
+      });
+      const { draft, costUsd } = await api<{ draft: SlipDraft; costUsd: number }>("/api/bets/read-slip", {
+        method: "POST",
+        body: { image, mediaType: "image/jpeg", today: localDay(Date.now()), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+      });
+      slipTotal.current = draft.totalOdds ? draft.totalOdds.toFixed(2) : null;
+      setLegs(draft.legs.map((l) => ({ ...l, commence: new Date(l.commence).toISOString() })));
+      if (draft.book) setBook(draft.book);
+      setStake(draft.stake ? String(draft.stake) : "");
+      if (draft.placedAt) setPlacedAt(localInput(new Date(draft.placedAt)));
+      const missing = [!draft.book && "the bookmaker", !draft.stake && "the stake"].filter(Boolean).join(" and ");
+      const typedLegs = draft.legs.filter((l) => !l.gameId).length;
+      setSlipNote({
+        text: `Read ${draft.legs.length === 1 ? "1 bet" : `${draft.legs.length} legs`}, about $${costUsd.toFixed(2)} of Claude usage. Nothing is saved yet, so check it below${missing ? ` and fill in ${missing}` : ""}, then save.`,
+        warnings: [
+          ...draft.warnings,
+          ...(typedLegs ? [`${typedLegs === 1 ? "1 game isn't" : `${typedLegs} games aren't`} in your saved odds, so Check results can't settle ${typedLegs === 1 ? "it" : "them"}. Mark ${typedLegs === 1 ? "it" : "them"} by hand.`] : []),
+        ],
+      });
+    } catch (err) {
+      setProblem((err as Error).message);
+    } finally {
+      setReading(false);
+    }
+  }
+
+  function onPaste(e: React.ClipboardEvent) {
+    const image = [...e.clipboardData.files].find((f) => f.type.startsWith("image/"));
+    if (!image || reading) return;
+    e.preventDefault();
+    readSlip(image);
+  }
+
   async function save() {
     setProblem(null);
     setSaved(null);
+    setSlipNote(null);
     if (!strategyId) return setProblem("Choose a strategy first.");
     setSaving(true);
     try {
@@ -161,10 +227,41 @@ export function AddPastBet({
   }
 
   return (
-    <div className="past-bet">
+    <div className="past-bet" onPaste={onPaste}>
       <p className="small muted">
         For bets you&apos;ve already placed, including started or finished games. Add one leg for a single, or several for a parlay.
       </p>
+
+      <fieldset className="past-section">
+        <legend>From a screenshot</legend>
+        <div className="slip-read">
+          <button type="button" className="btn" disabled={reading} onClick={() => fileInput.current?.click()}>
+            {reading ? "Reading…" : "Upload bet slip"}
+          </button>
+          <span className="small muted">Claude reads it and fills in the bet for you to check. You can also paste a screenshot here.</span>
+          <input
+            ref={fileInput}
+            className="slip-file"
+            type="file"
+            accept="image/*"
+            aria-label="Bet slip screenshot"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = ""; // So the same file can be chosen again.
+              if (file) readSlip(file);
+            }}
+          />
+        </div>
+        {reading && <p className="small muted" role="status">Reading your bet slip. This can take up to a minute.</p>}
+        {slipNote && (
+          <div className="slip-note" role="status">
+            <p className="small logged">{slipNote.text}</p>
+            {slipNote.warnings.length > 0 && (
+              <ul className="small warn-text">{slipNote.warnings.map((w) => <li key={w}>{w}</li>)}</ul>
+            )}
+          </div>
+        )}
+      </fieldset>
 
       <fieldset className="past-section">
         <legend>{legs.length ? "Add another leg" : "The bet"}</legend>
