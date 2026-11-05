@@ -142,8 +142,14 @@ export function LogBet({
   }
 
   if (state === "done") return <span className="logged small">Logged to ledger</span>;
+  const oddsLookWrong = Number(oddsText) > odds * 1.1;
   return (
     <form className="log-bet" onSubmit={submit}>
+      {oddsLookWrong && (
+        <p className="small warn-text log-warning" role="alert">
+          That&apos;s much higher than the {odds.toFixed(2)} shown. Check that it&apos;s the same bet, because a different bet here will show a false edge.
+        </p>
+      )}
       <label>
         <span>Stake €</span>
         <input className="num" type="number" min="0.01" step="0.01" value={stakeText} onChange={(e) => setStake(e.target.value)} />

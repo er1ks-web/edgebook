@@ -2,10 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { closingValue, ledgerStats, profit } from "@/lib/engine/settle";
-import type { Bet, LegResult } from "@/lib/types";
+import type { Bet, BetCheck, LegResult } from "@/lib/types";
 import { AddPastBet } from "./AddPastBet";
 import { BackupPanel } from "./BackupPanel";
-import { api, kickoff, money, pct, signedMoney, signedPct, Stat } from "./common";
+import { ago, api, kickoff, money, pct, signedMoney, signedPct, Stat } from "./common";
 
 const RESULTS: { value: LegResult; label: string }[] = [
   { value: "won", label: "Won" },
@@ -73,8 +73,70 @@ function EquityChart({ bets }: { bets: Bet[] }) {
   );
 }
 
+function CheckResult({ check }: { check: BetCheck }) {
+  return (
+    <section className="bet-check" aria-label="AI check">
+      <div className="check-head">
+        <span className={`check-score check-${check.label.toLowerCase()}`}>
+          <span className="num">{check.rating}/10</span> {check.label}
+        </span>
+        <span className="small muted">Rates the price and news, not the chance of winning</span>
+      </div>
+      <p>{check.summary}</p>
+      {check.note && <p className="small warn-text">{check.note}</p>}
+      {(check.hitProb !== null || check.ev !== null) && (
+        <p className="small muted">
+          Market says it hits about <span className="num">{pct(check.hitProb ?? 0)}</span> of the time, an edge of{" "}
+          <span className={`num ${(check.ev ?? 0) >= 0 ? "up" : "down"}`}>{signedPct(check.ev ?? 0)}</span> at your odds.
+        </p>
+      )}
+      <ul className="check-legs">
+        {check.legs.map((l) => (
+          <li key={l.key}>
+            <div className="small">
+              <span className="strong">{l.label}</span>
+              {l.edge !== null && <span className={`num ${l.edge >= 0 ? "up" : "down"}`}> {signedPct(l.edge)}</span>}
+            </div>
+            <div className="small muted">{l.assessment}</div>
+          </li>
+        ))}
+      </ul>
+      {check.risks.length > 0 && (
+        <div className="small">
+          <div className="strong">What could go wrong</div>
+          <ul className="risk-list muted">{check.risks.map((r) => <li key={r}>{r}</li>)}</ul>
+        </div>
+      )}
+      {check.sources.length > 0 && (
+        <div className="sources small">
+          {check.sources.map((s) => <a key={s.url} href={s.url} target="_blank" rel="noreferrer noopener">{s.title || s.url}</a>)}
+        </div>
+      )}
+      <p className="small muted">
+        Checked {ago(check.at)}
+        {check.oddsAgeMin !== null ? `, using odds about ${check.oddsAgeMin} min old` : ", with no saved odds for this bet"}
+        {` · about $${check.costUsd.toFixed(2)} of Claude usage`}
+      </p>
+    </section>
+  );
+}
+
 function BetCard({ bet, onChange, onError }: { bet: Bet; onChange: (b: Bet | null) => void; onError: (m: string) => void }) {
   const clv = closingValue(bet);
+  const [checking, setChecking] = useState(false);
+  const canCheck = bet.status === "pending" && !bet.demo && bet.legs.some((l) => l.result === "pending" && Date.parse(l.commence) > Date.now());
+
+  async function runCheck() {
+    setChecking(true);
+    try {
+      const { bet: next } = await api<{ bet: Bet }>(`/api/bets/${bet.id}/check`, { method: "POST" });
+      onChange(next);
+    } catch (err) {
+      onError((err as Error).message);
+    } finally {
+      setChecking(false);
+    }
+  }
 
   async function setResult(legIndex: number, result: LegResult) {
     try {
@@ -104,8 +166,16 @@ function BetCard({ bet, onChange, onError }: { bet: Bet; onChange: (b: Bet | nul
           {bet.manual && <span className="chip">Added by hand</span>}
           <span className="small muted"> {bet.kind === "parlay" ? `${bet.legs.length}-leg parlay` : "Single"} · {bet.bookTitle} · {bet.strategyName}</span>
         </div>
-        <button className="btn ghost tiny" onClick={remove}>Remove</button>
+        <div className="bet-actions">
+          {canCheck && (
+            <button className="btn ghost tiny" disabled={checking} onClick={runCheck}>
+              {checking ? "Checking…" : bet.aiCheck ? "Check again" : "AI check"}
+            </button>
+          )}
+          <button className="btn ghost tiny" onClick={remove}>Remove</button>
+        </div>
       </div>
+      {checking && <p className="small muted" role="status">Claude is checking the odds and news. This can take a minute or two.</p>}
       {bet.legs.map((leg, i) => (
         <div className="bet-leg" key={leg.key}>
           <div>
@@ -126,6 +196,7 @@ function BetCard({ bet, onChange, onError }: { bet: Bet; onChange: (b: Bet | nul
         {clv !== null && <span>Beat close by <span className="num">{signedPct(clv)}</span></span>}
         {bet.status !== "pending" && <span className="strong">Result <span className={`num ${profit(bet) >= 0 ? "up" : "down"}`}>{signedMoney(profit(bet))}</span></span>}
       </div>
+      {bet.aiCheck && <CheckResult check={bet.aiCheck} />}
     </li>
   );
 }

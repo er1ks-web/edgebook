@@ -135,6 +135,24 @@ export interface ScanResult {
   warnings: string[];
 }
 
+/** An AI rating of a bet, from market prices plus news research. */
+export interface BetCheck {
+  at: string;
+  rating: number;
+  label: "Strong" | "Fair" | "Weak" | "Poor";
+  summary: string;
+  /** Why the rating was limited by the numbers, if it was. */
+  note?: string;
+  risks: string[];
+  sources: { title: string; url: string }[];
+  legs: { key: string; label: string; assessment: string; fairProb: number | null; edge: number | null; started: boolean }[];
+  hitProb: number | null;
+  ev: number | null;
+  /** Age of the odds used, in minutes. Null when no saved odds covered this bet. */
+  oddsAgeMin: number | null;
+  costUsd: number;
+}
+
 export type LegResult = "pending" | "won" | "lost" | "push";
 
 export interface BetLeg {
@@ -179,4 +197,5 @@ export interface Bet {
   paper?: boolean;
   /** Entered by hand after the fact, so it has no expected edge. */
   manual?: boolean;
+  aiCheck?: BetCheck;
 }

@@ -5,6 +5,7 @@ import { PRESETS, StrategySchema, type Strategy } from "../strategy";
 import type { Bet, BetLeg, Pick, RawEvent } from "../types";
 import { assessSlip, legsAtBook } from "./slip";
 import { blendedAdjustmentPts, buildAiBets, selectGames } from "./aiPicks";
+import { betMath, finalRating, ratingLabel, upcomingLegs } from "./betCheck";
 import { devig, expectedValue, kelly, stakeFor } from "./odds";
 import { buildParlays } from "./parlays";
 import { evaluate, findPicks, leagueCoverage, regulationTimeBooks, selectionKey, toPick } from "./picks";
@@ -213,6 +214,79 @@ describe("parlays", () => {
   it("returns nothing when disabled", () => {
     const off = { ...s, parlay: { ...s.parlay, enabled: false } };
     expect(buildParlays(evaluate(events, off, NOW), off, {}, NOW)).toEqual([]);
+  });
+});
+
+describe("AI check of a bet", () => {
+  const baseLeg = (over: Partial<BetLeg>): BetLeg => ({
+    key: "k1", eventId: "e1", sportKey: "soccer_epl", sportTitle: "EPL", commence: later, home: "H", away: "A",
+    market: "h2h", selection: "H", label: "H to win", price: 2, prob: 0, result: "pending", ...over,
+  });
+  const baseBet = (legs: BetLeg[], odds: number): Bet => ({
+    id: "b", placedAt: later, kind: legs.length > 1 ? "parlay" : "single", book: "x", bookTitle: "X", strategyId: "s",
+    strategyName: "S", stake: 5, odds, evAtPlacement: 0, legs, status: "pending", returned: 0, demo: false,
+  });
+
+  it("prices a single against the market", () => {
+    const m = betMath(baseBet([baseLeg({ price: 2.1 })], 2.1), new Map([["k1", 0.5]]));
+    expect(m).toMatchObject({ hitProb: 0.5, sameGame: false, suspect: false });
+    expect(m.ev).toBeCloseTo(0.05, 6);
+  });
+
+  it("multiplies parlay legs across different games", () => {
+    const legs = [baseLeg({}), baseLeg({ key: "k2", eventId: "e2" })];
+    const m = betMath(baseBet(legs, 4), new Map([["k1", 0.5], ["k2", 0.6]]));
+    expect(m.hitProb).toBeCloseTo(0.3, 6);
+    expect(m.ev).toBeCloseTo(0.2, 6);
+  });
+
+  it("won't multiply two legs from the same game", () => {
+    const legs = [baseLeg({}), baseLeg({ key: "k2" })];
+    const m = betMath(baseBet(legs, 4), new Map([["k1", 0.5], ["k2", 0.6]]));
+    expect(m).toMatchObject({ sameGame: true, hitProb: null, ev: null });
+  });
+
+  it("gives no total when a leg can't be priced", () => {
+    const legs = [baseLeg({}), baseLeg({ key: "k2", eventId: "e2" })];
+    const m = betMath(baseBet(legs, 4), new Map([["k1", 0.5]]));
+    expect(m).toMatchObject({ hitProb: null, ev: null });
+    expect(m.fair).toEqual({ k1: 0.5, k2: null });
+  });
+
+  it("flags the real Juventus case: draw-no-bet logged at a win price", () => {
+    const m = betMath(baseBet([baseLeg({ price: 2.15 })], 2.15), new Map([["k1", 0.663]]));
+    expect(m.suspect).toBe(true);
+    expect(finalRating(9, m)).toMatchObject({ rating: 4 });
+    expect(finalRating(9, m).note).toContain("entered correctly");
+  });
+
+  it("caps a bet priced below fair, however good Claude's rating", () => {
+    const m = betMath(baseBet([baseLeg({ price: 1.8 })], 1.8), new Map([["k1", 0.5]]));
+    expect(finalRating(9, m)).toMatchObject({ rating: 5 });
+    expect(finalRating(3, m)).toEqual({ rating: 3 });
+  });
+
+  it("keeps Claude's rating when the numbers support it", () => {
+    const m = betMath(baseBet([baseLeg({ price: 2.1 })], 2.1), new Map([["k1", 0.5]]));
+    expect(finalRating(8, m)).toEqual({ rating: 8 });
+  });
+
+  it("keeps a rating in range, and handles nonsense", () => {
+    const m = betMath(baseBet([baseLeg({})], 2), new Map());
+    expect(finalRating(50, m).rating).toBe(10);
+    expect(finalRating(-3, m).rating).toBe(1);
+    expect(finalRating(Number.NaN, m).rating).toBe(5);
+    expect(finalRating(7.6, m).rating).toBe(8);
+  });
+
+  it("labels ratings", () => {
+    expect([10, 8, 7, 6, 5, 4, 3, 1].map(ratingLabel)).toEqual(["Strong", "Strong", "Fair", "Fair", "Weak", "Weak", "Poor", "Poor"]);
+  });
+
+  it("only researches pending games that haven't started", () => {
+    const past = new Date(NOW - 3_600_000).toISOString();
+    const legs = [baseLeg({ key: "soon" }), baseLeg({ key: "gone", commence: past }), baseLeg({ key: "done", result: "won" })];
+    expect(upcomingLegs(baseBet(legs, 4), NOW).map((l) => l.key)).toEqual(["soon"]);
   });
 });
 
