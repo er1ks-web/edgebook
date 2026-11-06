@@ -28,12 +28,16 @@ export function ago(iso: string | null) {
   return hours < 48 ? `${hours} h ago` : `${Math.round(hours / 24)} days ago`;
 }
 
+/** Fired after any change on the server, since a change may have spent Claude credit. */
+export const SPEND_EVENT = "edgebook:spend";
+
 export async function api<T>(url: string, init?: { method?: string; body?: unknown }): Promise<T> {
   const res = await fetch(url, {
     method: init?.method ?? "GET",
     headers: init?.body ? { "Content-Type": "application/json" } : undefined,
     body: init?.body ? JSON.stringify(init.body) : undefined,
   });
+  if (init?.method && init.method !== "GET") window.dispatchEvent(new Event(SPEND_EVENT));
   const data = await res.json().catch(() => ({}));
   if (res.status === 401) window.location.href = "/login"; // The session expired.
   if (!res.ok) throw new Error((data as { error?: string }).error ?? `Request failed (${res.status})`);

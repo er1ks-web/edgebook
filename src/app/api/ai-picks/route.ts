@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { AiReviewError, predictGames } from "@/lib/ai";
 import { createBet } from "@/lib/bets";
-import { buildAiBets, selectGames } from "@/lib/engine/aiPicks";
+import { buildAiBets, selectGames, usableGames } from "@/lib/engine/aiPicks";
 import { evaluate } from "@/lib/engine/picks";
 import { hasOddsKey } from "@/lib/oddsApi";
 import { loadEvents, runScan } from "@/lib/scan";
@@ -28,7 +28,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const { strategyId } = (await req.json()) as { strategyId: string };
+  const { strategyId, preview, confirmed } = (await req.json()) as { strategyId: string; preview?: boolean; confirmed?: boolean };
   if (!hasOddsKey()) {
     return NextResponse.json(
       { error: "AI picks need real fixtures. Add ODDS_API_KEY to .env.local to leave demo mode." },
@@ -49,12 +49,22 @@ export async function POST(req: Request) {
   // Predict from current prices. A refresh in the last few minutes is reused, not charged again.
   await runScan(strategy, true);
   const { events } = await loadEvents(strategy, false);
-  const games = selectGames(evaluate(events, strategy), strategy);
+  const selections = evaluate(events, strategy);
+  const games = selectGames(selections, strategy);
   if (!games.length) {
     return NextResponse.json(
       { error: "No upcoming games have a usable price. Check your leagues, books and odds limits in Strategy." },
       { status: 400 },
     );
+  }
+
+  // Lets the app state the cost before anything is researched. Odds refreshed here are reused below.
+  if (preview) {
+    return NextResponse.json({ researchAll: strategy.ai.researchAll, available: usableGames(selections, strategy).length, researching: games.length });
+  }
+  // The server decides this from the saved strategy, so an out-of-date page can't skip the question.
+  if (strategy.ai.researchAll && !confirmed) {
+    return NextResponse.json({ error: "Researching every game needs your go-ahead. Press the button again." }, { status: 409 });
   }
 
   try {

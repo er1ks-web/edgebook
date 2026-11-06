@@ -37,7 +37,7 @@ const usable = (o: Offer, s: Strategy) =>
  * news are most complete close to kickoff. Each game offers the match result plus the
  * most widely quoted line of each other market, so Claude isn't asked about every line.
  */
-export function selectGames(selections: Selection[], s: Strategy, now = Date.now()): GameCandidate[] {
+export function usableGames(selections: Selection[], s: Strategy, now = Date.now()): GameCandidate[] {
   const games = new Map<string, Selection[]>();
   for (const sel of selections) {
     if (!inWindow(sel.event.commence_time, s, now)) continue;
@@ -61,8 +61,40 @@ export function selectGames(selections: Selection[], s: Strategy, now = Date.now
     }
   }
   return candidates
-    .sort((a, b) => Date.parse(a.event.commence_time) - Date.parse(b.event.commence_time))
-    .slice(0, s.ai.gamesToResearch);
+    .sort((a, b) => Date.parse(a.event.commence_time) - Date.parse(b.event.commence_time));
+}
+
+/** "Every game" still stops here, because one press would otherwise have no spending limit. */
+export const MAX_RESEARCH_ALL = 40;
+
+export const researchLimit = (s: Strategy) => (s.ai.researchAll ? MAX_RESEARCH_ALL : s.ai.gamesToResearch);
+
+export const selectGames = (selections: Selection[], s: Strategy, now = Date.now()): GameCandidate[] =>
+  usableGames(selections, s, now).slice(0, researchLimit(s));
+
+/** Runs work on groups of items, a few at a time. One failed group doesn't lose the others. */
+export async function inBatches<T, R>(
+  items: T[],
+  size: number,
+  concurrency: number,
+  work: (batch: T[]) => Promise<R>,
+): Promise<PromiseSettledResult<R>[]> {
+  const batches: T[][] = [];
+  for (let i = 0; i < items.length; i += size) batches.push(items.slice(i, i + size));
+  const results: PromiseSettledResult<R>[] = new Array(batches.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < batches.length) {
+      const i = next++;
+      try {
+        results[i] = { status: "fulfilled", value: await work(batches[i]) };
+      } catch (reason) {
+        results[i] = { status: "rejected", reason };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, batches.length) }, worker));
+  return results;
 }
 
 /** Moves from the market toward Claude's estimate by the strategy's weight, within its cap. */

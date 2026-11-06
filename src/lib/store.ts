@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { PRESETS, StrategySchema, type Strategy } from "./strategy";
+import { addSpend, type ClaudeBudget } from "./claudeBudget";
+import { PRESETS, StrategySchema, withLowTierStrategy, type Strategy } from "./strategy";
 import type { AiPicksRun, AiReview, Bet, RawEvent } from "./types";
 
 // A host can point this at a persistent disk, so data survives each new deployment.
@@ -8,6 +9,8 @@ const DATA_DIR = process.env.DATA_DIR?.trim() || path.join(process.cwd(), "data"
 
 export interface AppState {
   strategies: Strategy[];
+  lowTierAdded?: boolean;
+  claudeBudget?: ClaudeBudget;
   bets: Bet[];
   reviews: Record<string, AiReview>;
   aiPicks?: Record<string, AiPicksRun>;
@@ -51,7 +54,7 @@ function enqueue<T>(task: () => Promise<T>): Promise<T> {
 }
 
 export async function readState(): Promise<AppState> {
-  const state = await readJson<AppState>("state.json", fresh);
+  const state = withLowTierStrategy(await readJson<AppState>("state.json", fresh));
   return { ...state, strategies: state.strategies.map((s) => StrategySchema.parse(s)) };
 }
 
@@ -63,6 +66,13 @@ export function updateState<T>(change: (state: AppState) => T): Promise<T> {
     await writeJson("state.json", state);
     return result;
   });
+}
+
+/** Takes a Claude call's estimated cost off the balance estimate. It must never fail the call. */
+export function recordClaudeSpend(costUsd: number) {
+  updateState((state) => {
+    state.claudeBudget = addSpend(state.claudeBudget, costUsd);
+  }).catch((err) => console.error("Couldn't record Claude spending", err));
 }
 
 export const readOddsCache = () => readJson<OddsCache>("odds-cache.json", () => ({}));

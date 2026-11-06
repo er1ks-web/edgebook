@@ -1,11 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { Strategy } from "@/lib/strategy";
+import { MAX_RESEARCH_ALL } from "@/lib/engine/aiPicks";
+import { LOW_TIER_LEAGUES, type Strategy } from "@/lib/strategy";
 import { api } from "./common";
 import { BuildSummary, Questionnaire, type BuildResult } from "./Questionnaire";
 
 export interface SportInfo { key: string; title: string; group: string }
+
+const LOW_TIER_GROUP = "Low-tier football";
 
 /** Number input that allows a partly typed value. `scale` shows 0.25 as 25. */
 function NumberField({
@@ -119,11 +122,16 @@ export function StrategyView({
 
   const sportGroups = useMemo(() => {
     const groups = new Map<string, { value: string; label: string }[]>();
-    for (const s of sports) groups.set(s.group, [...(groups.get(s.group) ?? []), { value: s.key, label: s.title }]);
+    for (const s of sports) {
+      const group = LOW_TIER_LEAGUES.includes(s.key) ? LOW_TIER_GROUP : s.group;
+      groups.set(group, [...(groups.get(group) ?? []), { value: s.key, label: s.title }]);
+    }
     return [...groups].sort(([a], [b]) => a.localeCompare(b));
   }, [sports]);
 
   const unavailable = draft.sports.filter((k) => sports.length > 0 && !sports.some((s) => s.key === k));
+  const lowTier = LOW_TIER_LEAGUES.filter((k) => sports.some((s) => s.key === k));
+  const withoutLowTier = draft.sports.filter((k) => !LOW_TIER_LEAGUES.includes(k));
   const credits = draft.sports.length * draft.markets.length * draft.regions.length;
 
   async function save(next: Strategy) {
@@ -204,6 +212,13 @@ export function StrategyView({
           {sportGroups.map(([group, options]) => (
             <div key={group}>
               <h3>{group}</h3>
+              {group === LOW_TIER_GROUP && (
+                <div className="league-actions">
+                  <button type="button" className="btn ghost tiny" onClick={() => set("sports", lowTier)}>Only these</button>
+                  <button type="button" className="btn ghost tiny" onClick={() => set("sports", [...withoutLowTier, ...lowTier])}>Add all</button>
+                  <button type="button" className="btn ghost tiny" disabled={!withoutLowTier.length} onClick={() => set("sports", withoutLowTier)}>Remove all</button>
+                </div>
+              )}
               <Chips options={options} selected={draft.sports} onChange={(sel) => set("sports", sel)} />
             </div>
           ))}
@@ -314,7 +329,14 @@ export function StrategyView({
           <span className="field-hint">Claude applies this while it researches your top selections, and needs evidence to change a probability.</span>
         </label>
         <div className="grid">
-          <NumberField label="Games to research" step="1" value={draft.ai.gamesToResearch} onChange={(n) => setAi("gamesToResearch", n)} hint="Soonest games first. Allow roughly $0.40 per game, with up to 6 searches each." />
+          <Choice
+            label="Games to research"
+            value={draft.ai.researchAll ? "all" : "next"}
+            onChange={(v) => setAi("researchAll", v === "all")}
+            options={[{ value: "next", label: "The next few" }, { value: "all", label: "Every game" }]}
+            hint={`Soonest first, at roughly $0.40 per game. Every game stops at ${MAX_RESEARCH_ALL} per run, about $${Math.round(MAX_RESEARCH_ALL * 0.4)}, and asks you first.`}
+          />
+          {!draft.ai.researchAll && <NumberField label="How many games" step="1" value={draft.ai.gamesToResearch} onChange={(n) => setAi("gamesToResearch", n)} />}
           <NumberField label="Most bets per run" step="1" value={draft.ai.picksCount} onChange={(n) => setAi("picksCount", n)} />
           <NumberField label="Trust in Claude's estimate" suffix="%" value={draft.ai.aiWeightPct} onChange={(n) => setAi("aiWeightPct", n)} hint="How much of the gap between Claude and the market to accept. Raise it only if the Ledger's track record supports it." />
           <NumberField label="Minimum edge for AI picks" suffix="%" value={draft.ai.minEdgePct} onChange={(n) => setAi("minEdgePct", n)} />

@@ -94,8 +94,9 @@ export function AiPicksView({
         <div>
           <h2>Bets Claude would place</h2>
           <p className="small muted">
-            Claude reads the news on your next {strategy.ai.gamesToResearch} games, makes its own prediction, and chooses a bet or says no bet.
+            Claude reads the news on {strategy.ai.researchAll ? "every game with a usable price" : `your next ${strategy.ai.gamesToResearch} games`}, makes its own prediction, and chooses a bet or says no bet.
             A bet appears here only if the odds also support it. Each run uses up to {credits} odds credits plus Claude usage, and takes a few minutes.
+            {strategy.ai.researchAll && " You'll see the number of games and the cost before it starts."}
           </p>
           {mode === "demo" && <p className="small warn-text">AI picks need real odds, so they don&apos;t run on demo data.</p>}
           {mode === "live" && !aiKey && <p className="small warn-text">Add ANTHROPIC_API_KEY to .env.local to use this.</p>}

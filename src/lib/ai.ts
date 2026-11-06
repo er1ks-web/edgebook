@@ -1,10 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
-import type { GameCandidate, GamePrediction } from "./engine/aiPicks";
+import { type GameCandidate, type GamePrediction, inBatches } from "./engine/aiPicks";
 import type { BetMath } from "./engine/betCheck";
 import { clampAdjustment } from "./engine/picks";
 import type { StrategyTweaks } from "./questionnaire";
+import { recordClaudeSpend } from "./store";
 import { type KnownGame, type SlipExtraction, SlipSchema } from "./slipImport";
 import type { Strategy } from "./strategy";
 import type { AiItem, AiReview, Bet, BetLeg, Pick } from "./types";
@@ -354,12 +355,14 @@ function describe(p: Pick) {
 
 type Usage = { input_tokens: number; output_tokens: number; cache_creation_input_tokens?: number | null; cache_read_input_tokens?: number | null; server_tool_use?: { web_search_requests?: number } | null };
 
+/** Every Claude call passes through here, so failed runs still count toward the balance estimate. */
 function costOf(usage: Usage) {
   const input = usage.input_tokens + (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0);
-  return (
+  const cost =
     (input * USD_PER_MTOK_IN + usage.output_tokens * USD_PER_MTOK_OUT) / 1_000_000 +
-    (usage.server_tool_use?.web_search_requests ?? 0) * USD_PER_SEARCH
-  );
+    (usage.server_tool_use?.web_search_requests ?? 0) * USD_PER_SEARCH;
+  recordClaudeSpend(cost);
+  return cost;
 }
 
 function explain(err: unknown): Error {
@@ -429,8 +432,33 @@ export interface PredictionRun {
   predictions: GamePrediction[];
 }
 
-/** Researches each game, then returns Claude's own probabilities and chosen bets. */
+const GAMES_PER_BATCH = 4;
+const BATCHES_AT_ONCE = 3;
+
+/**
+ * Researches games in small groups, because one long turn runs out of room before the last
+ * game. If only some groups fail, the rest still count and those games show as not covered.
+ */
 export async function predictGames(games: GameCandidate[], s: Strategy): Promise<PredictionRun> {
+  const results = await inBatches(games, GAMES_PER_BATCH, BATCHES_AT_ONCE, (batch) => predictBatch(batch, s));
+  const done = results.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
+  const failed = results.find((r) => r.status === "rejected");
+  if (!done.length) throw (failed as PromiseRejectedResult).reason;
+  if (failed) console.error("An AI picks batch failed", (failed as PromiseRejectedResult).reason);
+  const missed = results.length - done.length;
+  return {
+    notes: [
+      ...done.map((d) => d.notes),
+      ...(missed ? [`Research failed for ${missed} of ${results.length} groups of games, so some are listed as not covered.`] : []),
+    ].join("\n\n"),
+    costUsd: done.reduce((a, d) => a + d.costUsd, 0),
+    model: done[0].model,
+    predictions: done.flatMap((d) => d.predictions),
+  };
+}
+
+/** Researches a few games, then returns Claude's own probabilities and chosen bets. */
+async function predictBatch(games: GameCandidate[], s: Strategy): Promise<PredictionRun> {
   const client = new Anthropic();
   try {
     const payload = games.map(({ event, selections }) => ({

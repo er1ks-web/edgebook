@@ -194,6 +194,11 @@ main { margin-top: 12px; }
 .day-even { background: var(--line); color: var(--ink); }
 .day-readout { min-height: 20px; margin: 6px 0 0; }
 .bet-filter { margin-bottom: 8px; }
+.claude-balance { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.claude-balance label { display: inline-flex; align-items: center; gap: 6px; }
+.claude-balance input { width: 90px; }
+.footer .claude-balance .link-btn { margin-left: 0; }
+.league-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .slip-read { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .slip-file { display: none; }
 .slip-note { margin-top: 8px; }

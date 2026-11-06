@@ -59,6 +59,8 @@ export const StrategySchema = z.object({
     maxSearches: z.number().int().min(1).max(40),
     effort: z.enum(["low", "medium", "high", "xhigh"]),
     gamesToResearch: z.number().int().min(1).max(30).default(5),
+    /** Research every game with a usable price, rather than only the next few. */
+    researchAll: z.boolean().default(false),
     picksCount: z.number().int().min(1).max(20).default(5),
     /** How much of the gap between Claude's estimate and the market to accept. */
     aiWeightPct: z.number().min(0).max(100).default(30),
@@ -112,10 +114,54 @@ const BASE: Omit<Strategy, "id" | "name" | "description"> = {
     maxSearches: 12,
     effort: "high",
     gamesToResearch: 5,
+    researchAll: false,
     picksCount: 5,
     aiWeightPct: 30,
     minEdgePct: 2,
   },
+};
+
+/** Second and third divisions, plus smaller European top flights, as the odds feed names them. */
+export const LOW_TIER_LEAGUES = [
+  "soccer_efl_champ",
+  "soccer_england_league1",
+  "soccer_france_ligue_two",
+  "soccer_germany_bundesliga2",
+  "soccer_germany_liga3",
+  "soccer_italy_serie_b",
+  "soccer_spain_segunda_division",
+  "soccer_brazil_serie_b",
+  "soccer_sweden_superettan",
+  "soccer_austria_bundesliga",
+  "soccer_belgium_first_div",
+  "soccer_denmark_superliga",
+  "soccer_finland_veikkausliiga",
+  "soccer_greece_super_league",
+  "soccer_league_of_ireland",
+  "soccer_norway_eliteserien",
+  "soccer_poland_ekstraklasa",
+  "soccer_spl",
+  "soccer_sweden_allsvenskan",
+  "soccer_switzerland_superleague",
+  "soccer_turkey_super_league",
+];
+
+export const LOW_TIER_ID = "low-tier-football";
+
+const LOW_TIER_PRESET: Strategy = {
+  ...BASE,
+  id: LOW_TIER_ID,
+  name: "Low-tier football",
+  description: "Lower divisions and smaller leagues, with Claude researching every game.",
+  sports: LOW_TIER_LEAGUES,
+  maxHoursAhead: 48,
+  // Sharp books don't price every small league, so use every book, with sharps weighted more.
+  fairSource: "consensus",
+  minReferenceBooks: 3,
+  kellyFraction: 0.15,
+  maxStakePct: 1,
+  parlay: { ...BASE.parlay, enabled: false },
+  ai: { ...BASE.ai, effort: "medium", researchAll: true, picksCount: 10 },
 };
 
 export const PRESETS: Strategy[] = [
@@ -174,4 +220,17 @@ export const PRESETS: Strategy[] = [
     minReferenceBooks: 5,
     minEvPct: 2.5,
   },
+  LOW_TIER_PRESET,
 ];
+
+/** Adds the low-tier strategy to an existing app once, so deleting it keeps it deleted. */
+export function withLowTierStrategy<T extends { strategies: Strategy[]; lowTierAdded?: boolean }>(state: T): T {
+  if (state.lowTierAdded) return state;
+  const present = state.strategies.some((s) => s.id === LOW_TIER_ID);
+  const bankroll = state.strategies[0]?.bankroll ?? LOW_TIER_PRESET.bankroll;
+  return {
+    ...state,
+    lowTierAdded: true,
+    strategies: present ? state.strategies : [...state.strategies, { ...LOW_TIER_PRESET, bankroll }],
+  };
+}

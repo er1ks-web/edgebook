@@ -5,6 +5,7 @@ import { MAX_SLIP_LEGS } from "@/lib/engine/slip";
 import type { Strategy } from "@/lib/strategy";
 import type { AiPicksRun, Pick, ScanResult } from "@/lib/types";
 import { AiPicksView } from "./AiPicksView";
+import { ClaudeBalance } from "./ClaudeBalance";
 import { ago, api, type SlipControls } from "./common";
 import { ParlayBuilderView, type OfferedPick } from "./ParlayBuilderView";
 import { LedgerView } from "./LedgerView";
@@ -33,6 +34,8 @@ interface Status {
   sports: SportInfo[];
   error?: string;
 }
+
+const USD_PER_GAME = 0.4;
 
 export function App() {
   const [tab, setTab] = useState<Tab>("ai");
@@ -137,7 +140,12 @@ export function App() {
     setAiRunBusy(true);
     setError(null);
     try {
-      const { run } = await api<{ run: AiPicksRun }>("/api/ai-picks", { method: "POST", body: { strategyId: activeId } });
+      const { researchAll, available, researching } = await api<{ researchAll: boolean; available: number; researching: number }>("/api/ai-picks", { method: "POST", body: { strategyId: activeId, preview: true } });
+      if (researchAll) {
+        const skipped = available > researching ? ` ${available} have a usable price, so only the soonest ${researching} will be researched.` : "";
+        if (!window.confirm(`Research ${researching} games for about $${Math.max(1, Math.round(researching * USD_PER_GAME))} of Claude usage?${skipped} It can take 10 minutes or more.`)) return;
+      }
+      const { run } = await api<{ run: AiPicksRun }>("/api/ai-picks", { method: "POST", body: { strategyId: activeId, confirmed: researchAll } });
       setAiRun(run);
       setLedgerVersion((v) => v + 1);
       await runScan(activeId, false);
@@ -272,6 +280,7 @@ export function App() {
       <footer className="footer small muted">
         {scan?.fetchedAt && !isDemo && <span>Odds from {ago(scan.fetchedAt)}</span>}
         {scan?.quota.remaining != null && <span>{scan.quota.remaining} odds credits left</span>}
+        {status?.aiKey && <ClaudeBalance onError={setError} />}
         <span>Estimates, not guarantees. Edgebook never places bets.</span>
         {status?.loginRequired && (
           <button
