@@ -330,6 +330,14 @@ export function StrategyView({
         </label>
         <div className="grid">
           <Choice
+            label="What Best Picks looks for"
+            value={draft.ai.pickStyle}
+            onChange={(v) => setAi("pickStyle", v)}
+            options={[{ value: "best", label: "Most likely to come in" }, { value: "value", label: "Only bets with a price edge" }]}
+            hint="Most likely ranks by Claude's reasoning on form and news, and only shows how the price compares."
+          />
+          <NumberField label="Stake on each best pick" suffix="% of bankroll" value={draft.ai.flatStakePct} onChange={(n) => setAi("flatStakePct", n)} hint="A flat stake, because most likely picks may have no price edge to size a bet from. It never goes above your largest stake." />
+          <Choice
             label="Games to research"
             value={draft.ai.researchAll ? "all" : "next"}
             onChange={(v) => setAi("researchAll", v === "all")}

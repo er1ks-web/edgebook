@@ -194,6 +194,8 @@ main { margin-top: 12px; }
 .day-even { background: var(--line); color: var(--ink); }
 .day-readout { min-height: 20px; margin: 6px 0 0; }
 .bet-filter { margin-bottom: 8px; }
+.best-parlays { margin: 16px 0; }
+.best-parlay-legs { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; padding: 0; list-style: none; }
 .claude-balance { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
 .claude-balance label { display: inline-flex; align-items: center; gap: 6px; }
 .claude-balance input { width: 90px; }

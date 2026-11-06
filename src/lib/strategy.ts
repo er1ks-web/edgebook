@@ -59,6 +59,10 @@ export const StrategySchema = z.object({
     maxSearches: z.number().int().min(1).max(40),
     effort: z.enum(["low", "medium", "high", "xhigh"]),
     gamesToResearch: z.number().int().min(1).max(30).default(5),
+    /** "best" backs what Claude thinks is most likely to come in. "value" also needs a price edge. */
+    pickStyle: z.enum(["best", "value"]).default("best"),
+    /** Stake on each best pick, as a share of the bankroll. */
+    flatStakePct: z.number().min(0).max(100).default(2),
     /** Research every game with a usable price, rather than only the next few. */
     researchAll: z.boolean().default(false),
     picksCount: z.number().int().min(1).max(20).default(5),
@@ -114,6 +118,8 @@ const BASE: Omit<Strategy, "id" | "name" | "description"> = {
     maxSearches: 12,
     effort: "high",
     gamesToResearch: 5,
+    pickStyle: "best",
+    flatStakePct: 2,
     researchAll: false,
     picksCount: 5,
     aiWeightPct: 30,
@@ -160,7 +166,6 @@ const LOW_TIER_PRESET: Strategy = {
   minReferenceBooks: 3,
   kellyFraction: 0.15,
   maxStakePct: 1,
-  parlay: { ...BASE.parlay, enabled: false },
   ai: { ...BASE.ai, effort: "medium", researchAll: true, picksCount: 10 },
 };
 

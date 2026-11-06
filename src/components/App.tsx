@@ -16,7 +16,7 @@ import { StrategyView, type SportInfo } from "./StrategyView";
 
 type Tab = "ai" | "picks" | "parlays" | "builder" | "strategy" | "ledger" | "playbook";
 const TABS: { id: Tab; label: string }[] = [
-  { id: "ai", label: "AI Picks" },
+  { id: "ai", label: "Best Picks" },
   { id: "picks", label: "Value" },
   { id: "parlays", label: "Parlays" },
   { id: "builder", label: "Build Parlay" },

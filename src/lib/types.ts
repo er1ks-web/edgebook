@@ -87,6 +87,8 @@ export interface AiBet extends Pick {
   aiChance: number;
   /** Lowest odds at which this bet still clears the minimum edge. */
   minPrice: number;
+  /** Best picks only: how strong Claude thinks the case is, from 1 to 10. */
+  conviction?: number;
 }
 
 /** A game with no recommended bet, and why. */
@@ -107,6 +109,9 @@ export interface AiPicksRun {
   model: string;
   gamesResearched: number;
   bets: AiBet[];
+  /** Best picks only: parlays built from the picks, safest first. */
+  parlays?: Parlay[];
+  style?: "best" | "value";
   passes: AiPass[];
 }
 

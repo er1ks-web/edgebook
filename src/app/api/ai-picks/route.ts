@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { AiReviewError, predictGames } from "@/lib/ai";
 import { createBet } from "@/lib/bets";
-import { buildAiBets, selectGames, usableGames } from "@/lib/engine/aiPicks";
+import { buildAiBets, buildBestPicks, selectGames, usableGames } from "@/lib/engine/aiPicks";
 import { evaluate } from "@/lib/engine/picks";
 import { hasOddsKey } from "@/lib/oddsApi";
 import { loadEvents, runScan } from "@/lib/scan";
@@ -17,6 +17,7 @@ function current(run: AiPicksRun | undefined): AiPicksRun | null {
   return {
     ...run,
     bets: run.bets.filter((b) => Date.parse(b.commence) > now),
+    parlays: run.parlays?.filter((p) => p.legs.every((l) => Date.parse(l.commence) > now)),
     passes: run.passes.filter((p) => Date.parse(p.commence) > now),
   };
 }
@@ -70,15 +71,18 @@ export async function POST(req: Request) {
   try {
     const { predictions, notes, costUsd, model } = await predictGames(games, strategy);
     // Prices can move during research, which is why each bet carries a lowest acceptable price.
-    const { bets, passes } = buildAiBets(games, predictions, strategy);
-    const run: AiPicksRun = { at: new Date().toISOString(), notes, costUsd, model, gamesResearched: games.length, bets, passes };
+    const style = strategy.ai.pickStyle;
+    const { bets, passes, parlays } = style === "best"
+      ? buildBestPicks(games, predictions, strategy)
+      : { ...buildAiBets(games, predictions, strategy), parlays: [] };
+    const run: AiPicksRun = { at: new Date().toISOString(), notes, costUsd, model, gamesResearched: games.length, style, bets, parlays, passes };
 
     await updateState((state) => {
       state.aiPicks = { ...state.aiPicks, [strategy.id]: run };
       // Record every recommendation as a paper bet, so the track record can't be selective.
       for (const bet of bets) {
         const tracked = state.bets.some(
-          (b) => b.paper && b.strategyId === strategy.id && b.legs[0].key === bet.key,
+          (b) => b.paper && b.strategyId === strategy.id && b.legs.length === 1 && b.legs[0].key === bet.key,
         );
         if (tracked || bet.stake <= 0) continue;
         state.bets.push(
@@ -86,6 +90,22 @@ export async function POST(req: Request) {
             legs: [bet],
             stake: bet.stake,
             odds: bet.price,
+            strategyId: strategy.id,
+            strategyName: strategy.name,
+            demo: false,
+            paper: true,
+          }),
+        );
+      }
+      const keysOf = (legs: { key: string }[]) => legs.map((l) => l.key).sort().join();
+      for (const parlay of parlays) {
+        const tracked = state.bets.some((b) => b.paper && b.strategyId === strategy.id && keysOf(b.legs) === keysOf(parlay.legs));
+        if (tracked || parlay.stake <= 0) continue;
+        state.bets.push(
+          createBet({
+            legs: parlay.legs,
+            stake: parlay.stake,
+            odds: parlay.odds,
             strategyId: strategy.id,
             strategyName: strategy.name,
             demo: false,
