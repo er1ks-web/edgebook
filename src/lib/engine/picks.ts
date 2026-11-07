@@ -46,6 +46,7 @@ export const selectionKey = (eventId: string, market: string, name: string, poin
   `${eventId}|${market}|${name}|${point ?? ""}`;
 
 export function labelFor(market: MarketKey, name: string, point?: number) {
+  if (market === "other") return name;
   if (market === "h2h") return name === "Draw" ? "Draw" : `${name} to win`;
   if (market === "totals") return `${name} ${point}`;
   return `${name} ${point! > 0 ? "+" : ""}${point}`;
@@ -78,7 +79,7 @@ function linesForEvent(event: RawEvent, s: Strategy, now: number) {
   for (const book of event.bookmakers) {
     if (regulation.has(book.key)) continue;
     for (const market of book.markets) {
-      if (!s.markets.includes(market.key as MarketKey)) continue;
+      if (!s.markets.includes(market.key as Strategy["markets"][number])) continue;
       const updated = market.last_update ?? book.last_update;
       if (updated && now - Date.parse(updated) > s.maxStalenessMin * 60_000) continue;
 

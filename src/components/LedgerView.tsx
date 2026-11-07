@@ -3,8 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { bettingRecords, closingValue, type DayResult, ledgerStats, localDay, profit } from "@/lib/engine/settle";
 import type { Bet, BetCheck, LegResult } from "@/lib/types";
+import { LEDGER_ONLY } from "@/lib/features";
 import { AddPastBet } from "./AddPastBet";
 import { BackupPanel } from "./BackupPanel";
+import { BetNotes, LogListImport, MoneyPanel, StatsPanel } from "./LedgerExtras";
+import { chasingWarning, needsResult, realBets, stakeTotals, toCsv } from "@/lib/ledgerStats";
+import type { Money } from "@/lib/types";
 import { ago, api, kickoff, money, pct, signedMoney, signedPct, Stat } from "./common";
 
 const RESULTS: { value: LegResult; label: string }[] = [
@@ -128,7 +132,7 @@ function BetCard({ bet, onChange, onError }: { bet: Bet; onChange: (b: Bet | nul
   const clv = closingValue(bet);
   const [checking, setChecking] = useState(false);
   const [checkOpen, setCheckOpen] = useState(false);
-  const canCheck = bet.status === "pending" && !bet.demo && bet.legs.some((l) => l.result === "pending" && Date.parse(l.commence) > Date.now());
+  const canCheck = !LEDGER_ONLY && bet.status === "pending" && !bet.demo && bet.legs.some((l) => l.result === "pending" && Date.parse(l.commence) > Date.now());
 
   async function runCheck() {
     setChecking(true);
@@ -169,7 +173,7 @@ function BetCard({ bet, onChange, onError }: { bet: Bet; onChange: (b: Bet | nul
           <span className={`chip status-${bet.status}`}>{bet.status === "pending" ? "Open" : bet.status[0].toUpperCase() + bet.status.slice(1)}</span>
           {bet.demo && <span className="chip">Demo</span>}
           {bet.manual && <span className="chip">Added by hand</span>}
-          <span className="small muted"> {bet.kind === "parlay" ? `${bet.legs.length}-leg parlay` : "Single"} · {bet.bookTitle} · {bet.strategyName}</span>
+          <span className="small muted"> {bet.kind === "parlay" ? `${bet.legs.length}-leg parlay` : "Single"} · {bet.bookTitle}{!LEDGER_ONLY && <> · {bet.strategyName}</>}</span>
         </div>
         <div className="bet-actions">
           {canCheck && (
@@ -185,7 +189,11 @@ function BetCard({ bet, onChange, onError }: { bet: Bet; onChange: (b: Bet | nul
         <div className="bet-leg" key={leg.key}>
           <div>
             <div>{leg.label} <span className="num muted">@ {leg.price.toFixed(2)}</span></div>
-            <div className="small muted">{leg.home} vs {leg.away} · {kickoff(leg.commence)}</div>
+            <div className="small muted">
+              {leg.home} vs {leg.away} · {kickoff(leg.commence)}
+              {leg.chance !== undefined && ` · chat ${Math.round(leg.chance * 100)}%`}
+              {leg.strength !== undefined && ` · ${leg.strength}/10`}
+            </div>
           </div>
           <div className="segmented" role="group" aria-label={`Result for ${leg.label}`}>
             {RESULTS.map((r) => (
@@ -197,10 +205,11 @@ function BetCard({ bet, onChange, onError }: { bet: Bet; onChange: (b: Bet | nul
       <div className="bet-foot small">
         <span>Stake <span className="num">{money(bet.stake)}</span></span>
         <span>Odds <span className="num">{bet.odds.toFixed(2)}</span></span>
-        {!bet.manual && <span>Expected edge <span className="num">{signedPct(bet.evAtPlacement)}</span></span>}
+        {!bet.manual && !LEDGER_ONLY && <span>Expected edge <span className="num">{signedPct(bet.evAtPlacement)}</span></span>}
         {clv !== null && <span>Beat close by <span className="num">{signedPct(clv)}</span></span>}
         {bet.status !== "pending" && <span className="strong">Result <span className={`num ${profit(bet) >= 0 ? "up" : "down"}`}>{signedMoney(profit(bet))}</span></span>}
       </div>
+      {!bet.demo && <BetNotes bet={bet} onChange={onChange} onError={onError} />}
       {bet.aiCheck && <CheckResult check={bet.aiCheck} open={checkOpen} onToggle={setCheckOpen} />}
     </li>
   );
@@ -297,9 +306,10 @@ function Records({ bets }: { bets: Bet[] }) {
   );
 }
 
-type BetFilter = "all" | Bet["status"];
+type BetFilter = "all" | "needs" | Bet["status"];
 const FILTERS: { value: BetFilter; label: string; empty: string }[] = [
   { value: "all", label: "All", empty: "" },
+  { value: "needs", label: "Needs result", empty: "Nothing is waiting for a result." },
   { value: "pending", label: "Open", empty: "No open bets." },
   { value: "won", label: "Won", empty: "No won bets yet." },
   { value: "lost", label: "Lost", empty: "No lost bets." },
@@ -314,6 +324,11 @@ export function LedgerView({ mode, strategyId, onError }: { mode: "demo" | "live
 
   const load = () => api<{ bets: Bet[] }>("/api/bets").then((r) => setBets(r.bets)).catch((e) => onError(e.message));
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  const [moneyData, setMoneyData] = useState<Money | null>(null);
+  useEffect(() => {
+    if (LEDGER_ONLY) api<{ money: Money }>("/api/money").then((r) => setMoneyData(r.money)).catch((e) => onError(e.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function check() {
     setChecking(true);
@@ -332,28 +347,67 @@ export function LedgerView({ mode, strategyId, onError }: { mode: "demo" | "live
   if (!bets) return <p className="empty">Loading ledger…</p>;
   // Demo and paper bets never mix into real results.
   const visible = bets.filter((b) => b.demo === (mode === "demo") && !b.paper);
+  const waiting = needsResult(visible);
+  const real = realBets(visible);
+  const totals = stakeTotals(real);
+  const chasing = chasingWarning(real);
+  const limits = moneyData?.limits;
+  const overDay = limits?.dailyStake != null && totals.today > limits.dailyStake;
+  const overWeek = limits?.weeklyStake != null && totals.week > limits.weeklyStake;
   const stats = ledgerStats(visible);
   const paper = bets.filter((b) => b.paper && !b.demo);
   const paperStats = ledgerStats(paper);
   const settled = visible.filter((b) => b.status !== "pending");
-  const countOf = (f: BetFilter) => (f === "all" ? visible.length : visible.filter((b) => b.status === f).length);
-  // Push only appears once there is one, and the view falls back if the last one changes.
-  const filters = FILTERS.filter((f) => f.value !== "push" || countOf("push") > 0);
+  const listFor = (f: BetFilter) => (f === "all" ? visible : f === "needs" ? waiting : visible.filter((b) => b.status === f));
+  const countOf = (f: BetFilter) => listFor(f).length;
+  // Push and Needs result only appear when they have bets, and the view falls back if they empty.
+  const filters = FILTERS.filter((f) => (f.value !== "push" && f.value !== "needs") || countOf(f.value) > 0);
   const active = filters.find((f) => f.value === filter) ?? filters[0];
-  const shown = active.value === "all" ? visible : visible.filter((b) => b.status === active.value);
+  const shown = listFor(active.value);
+
+  function exportCsv() {
+    const blob = new Blob([toCsv(real)], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `edgebook-bets-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <>
       <div className="stats">
-        <Stat label="Profit" value={signedMoney(stats.net)} tone={stats.net > 0 ? "up" : stats.net < 0 ? "down" : undefined} note={`expected ${signedMoney(stats.expected)}`} />
+        <Stat label="Profit" value={signedMoney(stats.net)} tone={stats.net > 0 ? "up" : stats.net < 0 ? "down" : undefined} note={LEDGER_ONLY ? `${money(stats.staked)} staked` : `expected ${signedMoney(stats.expected)}`} />
         <Stat label="Return on stakes" value={stats.roi === null ? "No bets yet" : signedPct(stats.roi)} note={`${stats.settled} settled`} />
         <Stat label="Hit rate" value={stats.hitRate === null ? "No bets yet" : pct(stats.hitRate)} />
-        <Stat label="Beat the close" value={stats.avgClv === null ? "No data yet" : signedPct(stats.avgClv)} note={stats.clvCount ? `over ${stats.clvCount} bets` : "Refresh odds before kickoff to track"} />
+        {!LEDGER_ONLY && <Stat label="Beat the close" value={stats.avgClv === null ? "No data yet" : signedPct(stats.avgClv)} note={stats.clvCount ? `over ${stats.clvCount} bets` : "Refresh odds before kickoff to track"} />}
         <Stat label="Open bets" value={String(stats.open)} note={`${money(stats.exposure)} at risk`} />
       </div>
 
+      {(overDay || overWeek) && (
+        <div className="banner warn" role="alert">
+          You&apos;re over your stake limit: {overDay && `${money(totals.today)} today against ${money(limits!.dailyStake!)}`}
+          {overDay && overWeek && ", and "}
+          {overWeek && `${money(totals.week)} this week against ${money(limits!.weeklyStake!)}`}. Consider stopping here.
+        </div>
+      )}
+      {chasing && (
+        <div className="banner warn" role="alert">
+          Your stakes have gone up after losses: {money(chasing.stake)} after {chasing.losses} losses in a row, against your usual {money(chasing.usual)}. Raising stakes to win losses back is how most bankrolls go to zero.
+        </div>
+      )}
+      {waiting.length > 0 && (
+        <div className="banner">
+          {waiting.length === 1 ? "1 bet is" : `${waiting.length} bets are`} waiting for a result.{" "}
+          <button type="button" className="link-btn" onClick={() => setFilter("needs")}>Show {waiting.length === 1 ? "it" : "them"}</button>
+        </div>
+      )}
+
       <p className="lede">
-        Results are mostly luck for the first few hundred bets. Beating the closing price is the earlier sign that a strategy has a real edge.
+        {LEDGER_ONLY
+          ? "Results are mostly luck for the first few hundred bets, so judge your approach over many bets, not a hot or cold week."
+          : "Results are mostly luck for the first few hundred bets. Beating the closing price is the earlier sign that a strategy has a real edge."}
       </p>
 
       {settled.length >= 2 && (
@@ -365,7 +419,10 @@ export function LedgerView({ mode, strategyId, onError }: { mode: "demo" | "live
 
       {settled.length > 0 && <Records bets={visible} />}
 
-      {paper.length > 0 && (
+      {LEDGER_ONLY && <StatsPanel bets={real} />}
+      {LEDGER_ONLY && moneyData && <MoneyPanel bets={real} money={moneyData} onChange={setMoneyData} onError={onError} />}
+
+      {!LEDGER_ONLY && paper.length > 0 && (
         <section className="panel">
           <h2>AI picks track record</h2>
           <p className="small muted">Every AI pick is recorded here automatically at its suggested stake and odds. No real money, and it stays out of your results above.</p>
@@ -379,20 +436,28 @@ export function LedgerView({ mode, strategyId, onError }: { mode: "demo" | "live
       )}
 
       <details className="panel add-past">
-        <summary>Add a bet you already placed, by hand or from a screenshot</summary>
+        <summary>{LEDGER_ONLY ? "Add a bet, by hand or from a screenshot" : "Add a bet you already placed, by hand or from a screenshot"}</summary>
         <AddPastBet strategyId={strategyId} onAdded={load} onError={onError} />
       </details>
+
+      {LEDGER_ONLY && (
+        <details className="panel add-past">
+          <summary>Paste the chat&apos;s log list</summary>
+          <LogListImport strategyId={strategyId} onAdded={load} onError={onError} />
+        </details>
+      )}
 
       <BackupPanel onRestored={load} />
 
       <div className="ledger-actions">
         <h2>Bets</h2>
-        {mode === "live" && <button className="btn" disabled={checking} onClick={check}>{checking ? "Checking…" : "Check results"}</button>}
+        {mode === "live" && !LEDGER_ONLY && <button className="btn" disabled={checking} onClick={check}>{checking ? "Checking…" : "Check results"}</button>}
         {message && <span className="small muted" role="status">{message}</span>}
+        {real.length > 0 && <button type="button" className="btn ghost tiny export-btn" onClick={exportCsv}>Export spreadsheet</button>}
       </div>
 
       {visible.length === 0 ? (
-        <p className="empty">No bets logged yet. Open a pick and choose Log bet after you place it, or add one you&apos;ve already placed above.</p>
+        <p className="empty">{LEDGER_ONLY ? "No bets logged yet. Add one above, by hand or from a bet slip screenshot." : "No bets logged yet. Open a pick and choose Log bet after you place it, or add one you've already placed above."}</p>
       ) : (
         <>
           <div className="segmented bet-filter" role="group" aria-label="Show bets">

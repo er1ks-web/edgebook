@@ -13,9 +13,11 @@ export const SlipSchema = z.object({
       home: z.string(),
       away: z.string(),
       kickoff: z.string().nullable(),
-      market: z.enum(["h2h", "totals", "spreads"]),
-      side: z.enum(["home", "away", "draw", "over", "under"]),
+      market: z.enum(["h2h", "totals", "spreads", "other"]),
+      side: z.enum(["home", "away", "draw", "over", "under", "other"]),
       line: z.number().nullable(),
+      /** The bet as the slip words it. Used for market "other". */
+      description: z.string().nullable(),
       odds: z.number().nullable(),
     }),
   ),
@@ -61,7 +63,8 @@ const isDate = (v: string | null): v is string => v !== null && Number.isFinite(
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const MISMATCH = 0.03;
 
-function selectionFor(market: MarketKey, side: SlipExtraction["legs"][number]["side"], home: string, away: string): string | null {
+function selectionFor(market: MarketKey, side: SlipExtraction["legs"][number]["side"], home: string, away: string, description: string | null): string | null {
+  if (market === "other") return description?.trim().slice(0, 120) || null;
   if (market === "totals") return side === "over" ? "Over" : side === "under" ? "Under" : null;
   if (side === "home") return home;
   if (side === "away") return away;
@@ -87,8 +90,8 @@ export function buildSlipDraft(slip: SlipExtraction, games: KnownGame[], now: st
       warnings.push("Skipped a leg because its teams couldn't be read.");
       return [];
     }
-    const selection = selectionFor(leg.market, leg.side, home, away);
-    if (!selection || (leg.market !== "h2h" && leg.line === null)) {
+    const selection = selectionFor(leg.market, leg.side, home, away, leg.description);
+    if (!selection || ((leg.market === "totals" || leg.market === "spreads") && leg.line === null)) {
       warnings.push(`Skipped ${name} because its bet couldn't be read. Add it by hand.`);
       return [];
     }
@@ -123,7 +126,7 @@ export function buildSlipDraft(slip: SlipExtraction, games: KnownGame[], now: st
       away,
       market: leg.market,
       selection,
-      point: leg.market === "h2h" ? undefined : leg.line!,
+      point: leg.market === "totals" || leg.market === "spreads" ? leg.line! : undefined,
       price,
     }];
   });

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createManualBet, ManualBetSchema } from "@/lib/manualBet";
+import { LEDGER_ONLY } from "@/lib/features";
 import { hasOddsKey } from "@/lib/oddsApi";
 import { updateState } from "@/lib/store";
 
@@ -12,7 +13,8 @@ export async function POST(req: Request) {
   }
   const bet = await updateState((state) => {
     const strategy = state.strategies.find((s) => s.id === parsed.data.strategyId);
-    const created = createManualBet(parsed.data, strategy?.name ?? "Added by hand", !hasOddsKey());
+    // As a ledger, every bet is real, with or without an odds key.
+    const created = createManualBet(parsed.data, strategy?.name ?? "Added by hand", !LEDGER_ONLY && !hasOddsKey());
     state.bets.push(created);
     return created;
   });

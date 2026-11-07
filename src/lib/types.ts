@@ -1,4 +1,5 @@
-export type MarketKey = "h2h" | "spreads" | "totals";
+/** "other" is any bet typed as text, such as a corners line or a player to score. */
+export type MarketKey = "h2h" | "spreads" | "totals" | "other";
 
 export interface RawOutcome { name: string; price: number; point?: number }
 export interface RawMarket { key: string; last_update?: string; outcomes: RawOutcome[] }
@@ -180,6 +181,10 @@ export interface BetLeg {
   result: LegResult;
   /** Automatic result checks skip this leg, so it's marked by hand. */
   handSettle?: boolean;
+  /** The research chat's chance that this leg wins, from 0 to 1. */
+  chance?: number;
+  /** The research chat's strength score, from 1 to 10. */
+  strength?: number;
 }
 
 export interface Bet {
@@ -203,4 +208,26 @@ export interface Bet {
   /** Entered by hand after the fact, so it has no expected edge. */
   manual?: boolean;
   aiCheck?: BetCheck;
+  note?: string;
+  tags?: string[];
+}
+
+/** Money in and out of your betting, and what the tools cost. */
+export interface MoneyEntry {
+  id: string;
+  at: string;
+  kind: "deposit" | "withdrawal" | "cost";
+  amount: number;
+  note: string;
+}
+
+/** Stake limits you set yourself. Null means no limit. */
+export interface StakeLimits {
+  dailyStake: number | null;
+  weeklyStake: number | null;
+}
+
+export interface Money {
+  entries: MoneyEntry[];
+  limits: StakeLimits;
 }

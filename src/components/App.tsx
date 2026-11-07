@@ -6,6 +6,8 @@ import type { Strategy } from "@/lib/strategy";
 import type { AiPicksRun, Pick, ScanResult } from "@/lib/types";
 import { AiPicksView } from "./AiPicksView";
 import { ClaudeBalance } from "./ClaudeBalance";
+import { PromptView } from "./PromptView";
+import { LEDGER_ONLY } from "@/lib/features";
 import { ago, api, type SlipControls } from "./common";
 import { ParlayBuilderView, type OfferedPick } from "./ParlayBuilderView";
 import { LedgerView } from "./LedgerView";
@@ -14,7 +16,7 @@ import { ParlaysView, PicksView } from "./PicksView";
 import { PlaybookView } from "./PlaybookView";
 import { StrategyView, type SportInfo } from "./StrategyView";
 
-type Tab = "ai" | "picks" | "parlays" | "builder" | "strategy" | "ledger" | "playbook";
+type Tab = "ai" | "picks" | "parlays" | "builder" | "strategy" | "ledger" | "playbook" | "prompt";
 const TABS: { id: Tab; label: string }[] = [
   { id: "ai", label: "Best Picks" },
   { id: "picks", label: "Value" },
@@ -22,9 +24,15 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "builder", label: "Build Parlay" },
   { id: "strategy", label: "Strategy" },
   { id: "ledger", label: "Ledger" },
+  { id: "prompt", label: "Prompt" },
   { id: "playbook", label: "Playbook" },
 ];
 const STRATEGY_KEY = "edgebook.strategy";
+// As a ledger, strategies only shape the research prompt for a chat.
+const LEDGER_TABS: Tab[] = ["ledger", "prompt", "strategy"];
+const SHOWN_TABS = LEDGER_ONLY
+  ? LEDGER_TABS.map((id) => TABS.find((t) => t.id === id)!)
+  : TABS.filter((t) => t.id !== "prompt");
 
 interface Status {
   mode: "demo" | "live";
@@ -38,7 +46,7 @@ interface Status {
 const USD_PER_GAME = 0.4;
 
 export function App() {
-  const [tab, setTab] = useState<Tab>("ai");
+  const [tab, setTab] = useState<Tab>(LEDGER_ONLY ? "ledger" : "ai");
   const [aiRun, setAiRun] = useState<AiPicksRun | null>(null);
   const [aiRunBusy, setAiRunBusy] = useState(false);
   const [status, setStatus] = useState<Status | null>(null);
@@ -120,6 +128,7 @@ export function App() {
     if (!activeId) return;
     try { localStorage.setItem(STRATEGY_KEY, activeId); } catch { /* storage may be blocked */ }
     // Saving a copy already scans. Switching strategies never spends credits.
+    if (LEDGER_ONLY) return;
     if (skipNextScan.current) {
       skipNextScan.current = false;
       return;
@@ -128,7 +137,7 @@ export function App() {
   }, [activeId, runScan]);
 
   useEffect(() => {
-    if (!activeId) return;
+    if (!activeId || LEDGER_ONLY) return;
     setAiRun(null);
     api<{ run: AiPicksRun | null }>(`/api/ai-picks?strategyId=${encodeURIComponent(activeId)}`)
       .then((r) => setAiRun(r.run))
@@ -170,19 +179,23 @@ export function App() {
   }
 
   const credits = active ? active.sports.length * active.markets.length * active.regions.length : 0;
-  const isDemo = (scan?.mode ?? status?.mode) === "demo";
+  // As a ledger, bets are always real, whether or not an odds key is set.
+  const isDemo = !LEDGER_ONLY && (scan?.mode ?? status?.mode) === "demo";
 
   return (
     <div className="shell">
       <header className="topbar">
         <Logo />
 
+        {(!LEDGER_ONLY || tab !== "ledger") && (
         <label className="strategy-select">
           <span className="sr-only">Active strategy</span>
           <select value={activeId ?? ""} onChange={(e) => setActiveId(e.target.value)}>
             {strategies.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </label>
+        )}
+        {!LEDGER_ONLY && (
         <div className="top-actions">
           <button className="btn" disabled={!activeId || busy !== null || aiRunBusy} onClick={() => activeId && runScan(activeId, true)}>
             {busy === "scan" ? "Scanning…" : "Refresh odds"}
@@ -194,10 +207,12 @@ export function App() {
             </button>
           )}
         </div>
+        )}
       </header>
 
+      {SHOWN_TABS.length > 1 && (
       <nav className="tabs" aria-label="Sections">
-        {TABS.map((t) => (
+        {SHOWN_TABS.map((t) => (
           <button key={t.id} className={tab === t.id ? "tab active" : "tab"} aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)}>
             {t.label}
             {t.id === "picks" && scan ? <span className="count num">{scan.picks.length}</span> : null}
@@ -206,6 +221,7 @@ export function App() {
           </button>
         ))}
       </nav>
+      )}
 
       {isDemo && (
         <div className="banner demo">
@@ -221,8 +237,8 @@ export function App() {
         <div className="banner">Claude is searching for injuries, lineups and news on your top selections. This can take a few minutes.</div>
       )}
       {error && <div className="banner danger" role="alert">{error}</div>}
-      {status?.error && <div className="banner danger" role="alert">Odds service: {status.error}</div>}
-      {scan?.warnings.map((w) => <div className="banner warn" key={w}>{w}</div>)}
+      {!LEDGER_ONLY && status?.error && <div className="banner danger" role="alert">Odds service: {status.error}</div>}
+      {!LEDGER_ONLY && scan?.warnings.map((w) => <div className="banner warn" key={w}>{w}</div>)}
 
       <main>
         {tab === "ai" && active && (
@@ -264,7 +280,8 @@ export function App() {
                 skipNextScan.current = true;
                 setActiveId(saved.id);
               }
-              await runScan(saved.id, "missing");
+              // Saving never fetches odds as a ledger, so it spends no credits.
+              if (!LEDGER_ONLY) await runScan(saved.id, "missing");
             }}
             onDeleted={async () => {
               const list = await loadStrategies();
@@ -274,14 +291,15 @@ export function App() {
           />
         )}
         {tab === "playbook" && active && <PlaybookView strategy={active} />}
+        {tab === "prompt" && active && <PromptView strategy={active} sports={status?.sports ?? []} onEditStrategy={() => setTab("strategy")} />}
         {tab === "ledger" && <LedgerView key={ledgerVersion} mode={isDemo ? "demo" : "live"} strategyId={activeId} onError={setError} />}
       </main>
 
       <footer className="footer small muted">
-        {scan?.fetchedAt && !isDemo && <span>Odds from {ago(scan.fetchedAt)}</span>}
-        {scan?.quota.remaining != null && <span>{scan.quota.remaining} odds credits left</span>}
+        {!LEDGER_ONLY && scan?.fetchedAt && !isDemo && <span>Odds from {ago(scan.fetchedAt)}</span>}
+        {!LEDGER_ONLY && scan?.quota.remaining != null && <span>{scan.quota.remaining} odds credits left</span>}
         {status?.aiKey && <ClaudeBalance onError={setError} />}
-        <span>Estimates, not guarantees. Edgebook never places bets.</span>
+        <span>{LEDGER_ONLY ? "Your betting record. Edgebook never places bets." : "Estimates, not guarantees. Edgebook never places bets."}</span>
         {status?.loginRequired && (
           <button
             type="button"

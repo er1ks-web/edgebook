@@ -293,12 +293,14 @@ Odds are decimal, so convert any fractional or American odds. "stake" is the amo
 
 For each game, "home" is the first team listed and "away" the second. If it matches a game in the provided list, set game_id to that game's id, allowing for short names and other spellings, and set it to "none" otherwise. Don't force a match when the teams or dates differ.
 
-Each leg must be a full-game bet of one of these kinds:
+Use these kinds only for full-game bets on the result, goals or points:
 - market "h2h" with side "home", "away" or "draw": the match result or winner.
-- market "totals" with side "over" or "under", and "line" as the total.
+- market "totals" with side "over" or "under", and "line" as the total goals or points.
 - market "spreads" with side "home" or "away", and "line" as that side's handicap, such as -1.5.
 
-Anything else, such as corners, cards, both teams to score, double chance, draw no bet, half-time or player bets, goes in left_out as a short description, not in legs.
+Record every other bet as market "other" with side "other": for example both teams to score, double chance, draw no bet, corners, cards, half-time or first-half bets, team totals, correct score and player bets. Put the bet in "description" as a short phrase in the slip's own terms, naming the team or player where it matters, such as "Both teams to score: Yes", "Arsenal or draw", "Over 9.5 corners" or "Haaland to score anytime". Use null for "description" in the other kinds.
+
+Use left_out only for a bet you can't read clearly enough to record.
 
 Write kickoff and placed_at as local time in the form YYYY-MM-DDTHH:mm with no offset, exactly as shown, using the provided date to work out a missing year or a word like "today". Use null if the slip doesn't show them.
 

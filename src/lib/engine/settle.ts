@@ -5,6 +5,7 @@ export interface FinalScore { home: number; away: number }
 /** Grades a leg from the final score. Returns "pending" if it can't tell. */
 export function gradeLeg(leg: BetLeg, score: FinalScore): LegResult {
   const { home, away } = score;
+  if (leg.market === "other") return "pending"; // A typed bet can't be graded from the score.
   if (leg.market === "h2h") {
     if (leg.selection === "Draw") return home === away ? "won" : "lost";
     if (home === away) return "lost";

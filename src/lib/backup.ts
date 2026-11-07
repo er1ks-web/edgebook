@@ -1,14 +1,14 @@
 import { z } from "zod";
 import type { AppState } from "./store";
 import { StrategySchema, type Strategy } from "./strategy";
-import type { Bet } from "./types";
+import type { Bet, Money } from "./types";
 
 const LegSchema = z.looseObject({
   key: z.string(),
   eventId: z.string(),
   home: z.string(),
   away: z.string(),
-  market: z.enum(["h2h", "spreads", "totals"]),
+  market: z.enum(["h2h", "spreads", "totals", "other"]),
   selection: z.string(),
   label: z.string(),
   price: z.number(),
@@ -33,6 +33,13 @@ export const BackupSchema = z.object({
   exportedAt: z.string(),
   strategies: z.array(StrategySchema),
   bets: z.array(BetSchema),
+  /** Added later, so older backups don't have it. */
+  money: z
+    .object({
+      entries: z.array(z.object({ id: z.string().min(1), at: z.string(), kind: z.enum(["deposit", "withdrawal", "cost"]), amount: z.number(), note: z.string() })),
+      limits: z.object({ dailyStake: z.number().nullable(), weeklyStake: z.number().nullable() }),
+    })
+    .optional(),
 });
 
 export type Backup = z.infer<typeof BackupSchema>;
@@ -45,6 +52,7 @@ export function createBackup(state: AppState, now = new Date()): Backup {
     exportedAt: now.toISOString(),
     strategies: state.strategies,
     bets: state.bets.filter((b) => !b.demo) as unknown as Backup["bets"],
+    ...(state.money ? { money: state.money } : {}),
   };
 }
 
@@ -75,6 +83,15 @@ export function restoreBackup(state: AppState, backup: Backup): RestoreResult {
     state.bets.push(bet as unknown as Bet);
     existing.add(bet.id);
     result.betsAdded++;
+  }
+
+  if (backup.money) {
+    const money: Money = state.money ?? { entries: [], limits: { dailyStake: null, weeklyStake: null } };
+    const known = new Set(money.entries.map((e) => e.id));
+    for (const entry of backup.money.entries) if (!known.has(entry.id)) money.entries.push(entry);
+    // Limits already set here are newer than the backup's, so they stay.
+    const unset = money.limits.dailyStake === null && money.limits.weeklyStake === null;
+    state.money = { entries: money.entries, limits: unset ? backup.money.limits : money.limits };
   }
 
   for (const strategy of backup.strategies as Strategy[]) {

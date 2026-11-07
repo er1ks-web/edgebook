@@ -10,11 +10,15 @@ const Leg = z.object({
   commence: z.string().refine((v) => Number.isFinite(Date.parse(v)), "Enter a valid kickoff time."),
   home: z.string().trim().min(1, "Enter both teams or players.").max(80),
   away: z.string().trim().min(1, "Enter both teams or players.").max(80),
-  market: z.enum(["h2h", "totals", "spreads"]),
-  selection: z.string().trim().min(1).max(80),
+  market: z.enum(["h2h", "totals", "spreads", "other"]),
+  selection: z.string().trim().min(1, "Describe the bet.").max(120),
   point: z.number().optional(),
   price: z.number().gt(1, "Odds must be above 1."),
+  chance: z.number().gt(0).lt(1).optional(),
+  strength: z.number().int().min(1).max(10).optional(),
 });
+
+export const TagsSchema = z.array(z.string().trim().min(1).max(30)).max(10);
 
 export const ManualBetSchema = z
   .object({
@@ -24,6 +28,8 @@ export const ManualBetSchema = z
     odds: z.number().gt(1, "Odds must be above 1."),
     placedAt: z.string().refine((v) => Number.isFinite(Date.parse(v)), "Enter a valid date."),
     legs: z.array(Leg).min(1, "Add at least one bet.").max(10, "A parlay can have up to 10 legs here."),
+    note: z.string().trim().max(500).optional(),
+    tags: TagsSchema.optional(),
   })
   .superRefine((bet, ctx) => {
     bet.legs.forEach((leg, i) => {
@@ -31,7 +37,7 @@ export const ManualBetSchema = z
       if (leg.market === "h2h" && ![leg.home, leg.away, "Draw"].includes(leg.selection)) fail("Choose a side for the match winner bet.");
       if (leg.market === "totals" && !["Over", "Under"].includes(leg.selection)) fail("Choose Over or Under.");
       if (leg.market === "spreads" && ![leg.home, leg.away].includes(leg.selection)) fail("Choose a side for the spread.");
-      if (leg.market !== "h2h" && (leg.point === undefined || !Number.isFinite(leg.point))) fail("Enter the line, such as 2.5.");
+      if ((leg.market === "totals" || leg.market === "spreads") && (leg.point === undefined || !Number.isFinite(leg.point))) fail("Enter the line, such as 2.5.");
     });
   });
 
@@ -41,8 +47,8 @@ export type ManualBetInput = z.input<typeof ManualBetSchema>;
  * Hockey books may have priced regulation time only, while final scores include
  * overtime, and a game typed by hand has no score to look up. Both are marked by hand.
  */
-function needsHandSettling(gameId: string | undefined, sportKey: string) {
-  return !gameId || sportKey.startsWith("icehockey_");
+function needsHandSettling(gameId: string | undefined, sportKey: string, market: string) {
+  return !gameId || sportKey.startsWith("icehockey_") || market === "other";
 }
 
 /**
@@ -52,7 +58,7 @@ function needsHandSettling(gameId: string | undefined, sportKey: string) {
 export function createManualBet(input: z.output<typeof ManualBetSchema>, strategyName: string, demo: boolean): Bet {
   const legs: BetLeg[] = input.legs.map((l) => {
     const eventId = l.gameId ?? `manual-${randomUUID()}`;
-    const point = l.market === "h2h" ? undefined : l.point;
+    const point = l.market === "h2h" || l.market === "other" ? undefined : l.point;
     return {
       key: selectionKey(eventId, l.market, l.selection, point),
       eventId,
@@ -68,7 +74,9 @@ export function createManualBet(input: z.output<typeof ManualBetSchema>, strateg
       price: input.legs.length === 1 ? input.odds : l.price,
       prob: 0,
       result: "pending",
-      handSettle: needsHandSettling(l.gameId, l.sportKey),
+      handSettle: needsHandSettling(l.gameId, l.sportKey, l.market),
+      ...(l.chance !== undefined ? { chance: l.chance } : {}),
+      ...(l.strength !== undefined ? { strength: l.strength } : {}),
     };
   });
   return {
@@ -87,5 +95,7 @@ export function createManualBet(input: z.output<typeof ManualBetSchema>, strateg
     returned: 0,
     demo,
     manual: true,
+    ...(input.note ? { note: input.note } : {}),
+    ...(input.tags?.length ? { tags: [...new Set(input.tags)] } : {}),
   };
 }

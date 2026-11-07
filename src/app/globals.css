@@ -193,7 +193,21 @@ main { margin-top: 12px; }
 .day-red { background: var(--down); color: var(--accent-ink); font-weight: 600; }
 .day-even { background: var(--line); color: var(--ink); }
 .day-readout { min-height: 20px; margin: 6px 0 0; }
-.bet-filter { margin-bottom: 8px; }
+.bet-filter { margin-bottom: 8px; flex-wrap: wrap; }
+.table-wrap { overflow-x: auto; margin: 8px 0; }
+.stats-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.stats-table th, .stats-table td { text-align: left; padding: 6px 10px 6px 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.stats-table th { color: var(--ink-2); font-weight: 500; }
+.money-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; margin: 12px 0; }
+.money-form .field { min-width: 120px; }
+.money-list { display: flex; flex-direction: column; gap: 4px; padding: 0; list-style: none; }
+.money-list li { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
+.money-list li .num { margin-left: auto; }
+.bet-notes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.bet-notes-form { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 8px; }
+.export-btn { margin-left: auto; }
+.prompt-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.prompt-text { width: 100%; box-sizing: border-box; font-size: 13px; line-height: 1.5; white-space: pre-wrap; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; resize: vertical; }
 .best-parlays { margin: 16px 0; }
 .best-parlay-legs { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; padding: 0; list-style: none; }
 .claude-balance { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }

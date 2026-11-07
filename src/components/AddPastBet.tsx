@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { localDay } from "@/lib/engine/settle";
+import { LEDGER_ONLY } from "@/lib/features";
 import type { SlipDraft } from "@/lib/slipImport";
 import type { MarketKey } from "@/lib/types";
 import { api, kickoff } from "./common";
@@ -44,6 +45,17 @@ interface DraftLeg {
 
 const NOT_LISTED = "__typed";
 
+type BetType = "h2h" | "totals" | "spreads" | "btts" | "double" | "dnb" | "other";
+const BET_TYPES: { value: BetType; label: string }[] = [
+  { value: "h2h", label: "Match winner" },
+  { value: "totals", label: "Over/under total" },
+  { value: "spreads", label: "Spread or handicap" },
+  { value: "btts", label: "Both teams to score" },
+  { value: "double", label: "Double chance" },
+  { value: "dnb", label: "Draw no bet" },
+  { value: "other", label: "Other, type it in" },
+];
+
 /** Formats a time for a datetime-local input, in the viewer's own time zone. */
 function localInput(date: Date) {
   const offset = date.getTimezoneOffset() * 60_000;
@@ -51,6 +63,7 @@ function localInput(date: Date) {
 }
 
 function legLabel(leg: DraftLeg) {
+  if (leg.market === "other") return leg.selection;
   if (leg.market === "h2h") return leg.selection === "Draw" ? "Draw" : `${leg.selection} to win`;
   if (leg.market === "totals") return `${leg.selection} ${leg.point}`;
   return `${leg.selection} ${leg.point! > 0 ? "+" : ""}${leg.point}`;
@@ -69,7 +82,8 @@ export function AddPastBet({
   const [home, setHome] = useState("");
   const [away, setAway] = useState("");
   const [commence, setCommence] = useState(() => localInput(new Date()));
-  const [market, setMarket] = useState<MarketKey>("h2h");
+  const [betType, setBetType] = useState<BetType>("h2h");
+  const market: MarketKey = betType === "h2h" || betType === "totals" || betType === "spreads" ? betType : "other";
   const [side, setSide] = useState("");
   const [point, setPoint] = useState("");
   const [price, setPrice] = useState("");
@@ -118,19 +132,26 @@ export function AddPastBet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [legsKey, legs.length]);
 
-  const sideOptions = market === "totals"
+  const sideOptions = betType === "totals"
     ? ["Over", "Under"]
-    : market === "spreads"
+    : betType === "spreads"
       ? [homeName, awayName]
-      : [homeName, awayName, "Draw"];
+      : betType === "btts"
+        ? ["Both teams to score: Yes", "Both teams to score: No"]
+        : betType === "double"
+          ? [`${homeName} or draw`, `${awayName} or draw`, `${homeName} or ${awayName}`]
+          : betType === "dnb"
+            ? [`${homeName} draw no bet`, `${awayName} draw no bet`]
+            : [homeName, awayName, "Draw"];
+  const needsLine = betType === "totals" || betType === "spreads";
 
   function addLeg() {
     setProblem(null);
     const odds = Number(price);
     const line = Number(point);
     if (!hasTeams) return setProblem("Choose a game, or type both teams or players.");
-    if (!side) return setProblem("Choose what you bet on.");
-    if (market !== "h2h" && (point.trim() === "" || !Number.isFinite(line))) return setProblem("Enter the line, such as 2.5.");
+    if (!side.trim()) return setProblem(betType === "other" ? "Describe the bet, such as Over 9.5 corners." : "Choose what you bet on.");
+    if (needsLine && (point.trim() === "" || !Number.isFinite(line))) return setProblem("Enter the line, such as 2.5.");
     if (!(odds > 1)) return setProblem("Enter the odds you got, above 1.");
     setLegs((current) => [
       ...current,
@@ -142,8 +163,8 @@ export function AddPastBet({
         home: homeName,
         away: awayName,
         market,
-        selection: side,
-        point: market === "h2h" ? undefined : line,
+        selection: side.trim(),
+        point: needsLine ? line : undefined,
         price: odds,
       },
     ]);
@@ -180,7 +201,7 @@ export function AddPastBet({
         text: `Read ${draft.legs.length === 1 ? "1 bet" : `${draft.legs.length} legs`}, about $${costUsd.toFixed(2)} of Claude usage. Nothing is saved yet, so check it below${missing ? ` and fill in ${missing}` : ""}, then save.`,
         warnings: [
           ...draft.warnings,
-          ...(typedLegs ? [`${typedLegs === 1 ? "1 game isn't" : `${typedLegs} games aren't`} in your saved odds, so Check results can't settle ${typedLegs === 1 ? "it" : "them"}. Mark ${typedLegs === 1 ? "it" : "them"} by hand.`] : []),
+          ...(typedLegs && !LEDGER_ONLY ? [`${typedLegs === 1 ? "1 game isn't" : `${typedLegs} games aren't`} in your saved odds, so Check results can't settle ${typedLegs === 1 ? "it" : "them"}. Mark ${typedLegs === 1 ? "it" : "them"} by hand.`] : []),
         ],
       });
     } catch (err) {
@@ -298,20 +319,25 @@ export function AddPastBet({
           )}
           <label className="field">
             <span className="field-label">Bet type</span>
-            <select value={market} onChange={(e) => { setMarket(e.target.value as MarketKey); setSide(""); setPoint(""); }}>
-              <option value="h2h">Match winner</option>
-              <option value="totals">Over/under total</option>
-              <option value="spreads">Spread or handicap</option>
+            <select value={betType} onChange={(e) => { setBetType(e.target.value as BetType); setSide(""); setPoint(""); }}>
+              {BET_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
             </select>
           </label>
-          <label className="field">
-            <span className="field-label">Your pick</span>
-            <select value={side} disabled={!hasTeams} onChange={(e) => setSide(e.target.value)}>
-              <option value="">{hasTeams ? "Choose" : "Choose a game first"}</option>
-              {hasTeams && sideOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-            </select>
-          </label>
-          {market !== "h2h" && (
+          {betType === "other" ? (
+            <label className="field">
+              <span className="field-label">Your bet</span>
+              <input value={side} maxLength={120} placeholder="Over 9.5 corners, Haaland to score" onChange={(e) => setSide(e.target.value)} />
+            </label>
+          ) : (
+            <label className="field">
+              <span className="field-label">Your pick</span>
+              <select value={side} disabled={!hasTeams} onChange={(e) => setSide(e.target.value)}>
+                <option value="">{hasTeams ? "Choose" : "Choose a game first"}</option>
+                {hasTeams && sideOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </label>
+          )}
+          {needsLine && (
             <label className="field">
               <span className="field-label">Line</span>
               <input className="num" type="number" step="0.5" value={point} placeholder={market === "totals" ? "2.5" : "-1.5"} onChange={(e) => setPoint(e.target.value)} />
@@ -322,7 +348,7 @@ export function AddPastBet({
             <input className="num" type="number" min="1.01" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} />
           </label>
         </div>
-        {hockey && market !== "h2h" && <p className="small warn-text">Check if your book&apos;s line includes overtime. Mark this one by hand, because automatic checks can&apos;t tell.</p>}
+        {hockey && needsLine && <p className="small warn-text">Check if your book&apos;s line includes overtime. Mark this one by hand, because automatic checks can&apos;t tell.</p>}
         <button type="button" className="btn past-add" onClick={addLeg}>Add this {legs.length ? "leg" : "bet"}</button>
       </fieldset>
 

@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { addSpend, type ClaudeBudget } from "./claudeBudget";
 import { PRESETS, StrategySchema, withLowTierStrategy, type Strategy } from "./strategy";
-import type { AiPicksRun, AiReview, Bet, RawEvent } from "./types";
+import type { AiPicksRun, AiReview, Bet, Money, RawEvent } from "./types";
 
 // A host can point this at a persistent disk, so data survives each new deployment.
 const DATA_DIR = process.env.DATA_DIR?.trim() || path.join(process.cwd(), "data");
@@ -11,6 +11,7 @@ export interface AppState {
   strategies: Strategy[];
   lowTierAdded?: boolean;
   claudeBudget?: ClaudeBudget;
+  money?: Money;
   bets: Bet[];
   reviews: Record<string, AiReview>;
   aiPicks?: Record<string, AiPicksRun>;

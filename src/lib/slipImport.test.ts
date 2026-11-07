@@ -5,7 +5,7 @@ const game: KnownGame = { id: "g1", sportKey: "soccer_x", sportTitle: "League", 
 const NOW = "2026-11-06T10:00:00.000Z";
 
 const leg = (over: Partial<SlipExtraction["legs"][number]> = {}): SlipExtraction["legs"][number] => ({
-  game_id: "none", home: "Home FC", away: "Away FC", kickoff: "2026-11-07T18:00", market: "h2h", side: "home", line: null, odds: 2, ...over,
+  game_id: "none", home: "Home FC", away: "Away FC", kickoff: "2026-11-07T18:00", market: "h2h", side: "home", line: null, description: null, odds: 2, ...over,
 });
 const slip = (over: Partial<SlipExtraction> = {}): SlipExtraction => ({
   is_bet_slip: true, bookmaker: "Betsafe", stake: 5, total_odds: null, placed_at: "2026-11-06T09:00", legs: [leg()], left_out: [], notes: [], ...over,
